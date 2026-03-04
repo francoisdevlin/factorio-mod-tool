@@ -1,0 +1,7 @@
+.runtime/
+.claude/commands/
+.logs/
+node_modules/
+.beads/
+.clj-kondo/
+.lsp/
