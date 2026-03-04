@@ -1,0 +1,21 @@
+{
+  "name": "factorio-mod-tool",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "npx shadow-cljs compile server",
+    "build:test": "npx shadow-cljs compile test",
+    "watch": "npx shadow-cljs watch server",
+    "watch:test": "npx shadow-cljs watch test",
+    "start": "node out/server.js",
+    "repl": "npx shadow-cljs node-repl"
+  },
+  "dependencies": {
+    "luaparse": "^0.3.1",
+    "rcon-client": "^4.2.4",
+    "archiver": "^7.0.1"
+  },
+  "devDependencies": {
+    "shadow-cljs": "^3.1.7"
+  }
+}

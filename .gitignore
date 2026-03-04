@@ -3,3 +3,8 @@
 .logs/
 .lsp/.cache/
 .clj-kondo/.cache/
+.beads/
+.nrepl-port
+node_modules/
+out/
+target/

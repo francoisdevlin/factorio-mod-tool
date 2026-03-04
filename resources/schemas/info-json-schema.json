@@ -1,0 +1,53 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Factorio Mod Info",
+  "description": "Schema for Factorio mod info.json files",
+  "type": "object",
+  "required": ["name", "version", "title", "author", "factorio_version"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Internal mod name. Must be unique. Cannot contain spaces.",
+      "pattern": "^[a-zA-Z0-9_-]+$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Mod version in major.minor.patch format.",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Display name shown in the mod portal and in-game."
+    },
+    "author": {
+      "type": "string",
+      "description": "Mod author name."
+    },
+    "contact": {
+      "type": "string",
+      "description": "Contact info (email, URL, etc.)."
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri",
+      "description": "URL to the mod's homepage."
+    },
+    "description": {
+      "type": "string",
+      "description": "Short description of the mod."
+    },
+    "factorio_version": {
+      "type": "string",
+      "description": "Compatible Factorio version (e.g. '1.1').",
+      "pattern": "^\\d+\\.\\d+$"
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of mod dependencies. Format: '(?)prefix mod_name (op version)'"
+    }
+  },
+  "additionalProperties": true
+}

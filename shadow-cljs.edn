@@ -1,0 +1,9 @@
+{:deps true
+
+ :builds {:server {:target    :node-script
+                   :main      factorio-mod-tool.server/main
+                   :output-to "out/server.js"}
+
+          :test {:target    :node-test
+                 :output-to "out/test.js"
+                 :autorun   true}}}
