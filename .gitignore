@@ -1,0 +1,10 @@
+.runtime/
+.claude/commands/
+.logs/
+.beads/
+.clj-kondo/
+.lsp/
+.nrepl-port
+node_modules/
+out/
+target/
