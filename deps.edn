@@ -1,2 +1,5 @@
-{:paths ["src"]
- :deps {org.clojure/clojurescript {:mvn/version "1.11.132"}}}
+{:paths ["src" "test"]
+ :deps {org.clojure/clojurescript {:mvn/version "1.12.42"}
+        thheller/shadow-cljs {:mvn/version "3.1.7"}
+        fi.metosin/mcp-toolkit {:mvn/version "0.1.1-alpha"}
+        funcool/promesa {:mvn/version "11.0.678"}}}
