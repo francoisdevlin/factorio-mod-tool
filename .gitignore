@@ -1,3 +1,5 @@
 .runtime/
 .claude/commands/
 .logs/
+.lsp/.cache/
+.clj-kondo/.cache/
