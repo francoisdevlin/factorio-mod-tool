@@ -11,6 +11,7 @@
             [factorio-mod-tool.analysis.lint :as lint]
             [factorio-mod-tool.analysis.diagnostic :as diag]
             [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.rcon.queries :as rcon-queries]
             [factorio-mod-tool.bundle.pack :as pack]
             [factorio-mod-tool.repl :as repl]))
 
@@ -261,7 +262,32 @@
             {:results results}))
 
         :else
-        (p/resolved {:error "Missing required field: files or source"}))))])
+        (p/resolved {:error "Missing required field: files or source"}))))
+
+   ;; ----- RCON query protocol commands -----
+
+   (command
+    "rcon-query"
+    "Execute a structured RCON query against a live Factorio server. Supports categories: prototypes, entities, recipes, technology, forces, surfaces, blueprints. Returns parsed JSON data."
+    {:type       "object"
+     :properties {:instance {:type        "string"
+                             :description "Name of the RCON connection"}
+                  :category {:type        "string"
+                             :description "Query category"
+                             :enum        ["prototypes" "entities" "recipes" "technology" "forces" "surfaces" "blueprints"]}
+                  :params   {:type        "object"
+                             :description "Category-specific parameters (see rcon-query-catalog for details)"}}
+     :required   ["instance" "category"]}
+    (fn [{:keys [instance category params]}]
+      (rcon-queries/execute-query instance (keyword category) params)))
+
+   (command
+    "rcon-query-catalog"
+    "List all available RCON query categories with their parameters and response shapes."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (p/resolved {:categories (rcon-queries/list-categories)})))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."

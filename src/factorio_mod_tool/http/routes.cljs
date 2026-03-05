@@ -28,7 +28,10 @@
    {:command "rcon-inspect" :method :post :path "/api/rcon/inspect"}
    {:command "repl-eval"    :method :post :path "/api/repl/eval"}
    {:command "repl-inspect"    :method :post :path "/api/repl/inspect"}
-   {:command "set-preference"  :method :post :path "/api/preferences"}])
+   {:command "set-preference"  :method :post :path "/api/preferences"}
+   ;; RCON query protocol
+   {:command "rcon-query"         :method :post :path "/api/rcon/query"}
+   {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers
