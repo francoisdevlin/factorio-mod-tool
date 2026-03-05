@@ -128,13 +128,15 @@
 ;; ---------------------------------------------------------------------------
 
 (defn target-pack
-  "Bundle mod into a distributable zip. Returns {:exit 0|1}."
+  "Bundle mod into a distributable zip. Returns {:exit 0|1}.
+   Reads structure.src, structure.dist, pack.exclude, name, and version from config."
   [{:keys [mod-path config]}]
   (let [dist-dir (or (get-in config [:structure :dist]) "dist")
         name (:name config)
         version (:version config)
+        excludes (get-in config [:pack :exclude] [])
         output-path (fs/join dist-dir (str name "_" version ".zip"))]
-    (p/let [result (pack/pack-mod mod-path output-path)]
+    (p/let [result (pack/pack-mod mod-path output-path {:exclude excludes})]
       (println (str "  → " (:output-path result)))
       {:exit 0 :output-path (:output-path result)})))
 

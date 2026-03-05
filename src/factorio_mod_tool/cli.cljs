@@ -183,15 +183,22 @@
 
 (defn cmd-check
   "Check Lua files for syntax errors. With --live, validates via RCON against
-   a running Factorio instance. Without --live, uses luaparse offline."
+   a running Factorio instance. Without --live, uses luaparse offline.
+   For --live mode, reads rcon.host/port from .fmod.json config and
+   FMOD_RCON_PASSWORD from env. CLI flags override config values."
   [opts files]
   (if (:live opts)
-    (let [instance "__check__"
-          rcon-opts (cond-> {}
-                      (:host opts) (assoc :host (:host opts))
-                      (:port opts) (assoc :port (:port opts))
-                      (:password opts) (assoc :password (:password opts)))]
-      (-> (p/let [_ (rcon/connect instance rcon-opts)
+    (let [instance "__check__"]
+      (-> (p/let [;; Read config for RCON defaults (best-effort — CLI flags override)
+                  cfg (-> (config/read-config)
+                          (p/catch (fn [_] {:config {}})))
+                  cfg-rcon (get-in (:config cfg) [:rcon] {})
+                  ;; CLI flags override config values
+                  rcon-opts (cond-> cfg-rcon
+                              (:host opts) (assoc :host (:host opts))
+                              (:port opts) (assoc :port (:port opts))
+                              (:password opts) (assoc :password (:password opts)))
+                  _ (rcon/connect instance rcon-opts)
                   results (p/all (mapv #(check-file-live instance %) files))]
             (rcon/disconnect instance)
             (println "Checking (live via RCON):")
@@ -359,11 +366,18 @@ Examples:
             rest (subvec args 1)]
         (case cmd
           "validate"
-          (if (empty? rest)
-            (do (print-err "Error: validate requires a mod path")
-                (print-err "Usage: fmod validate <mod-path>")
-                (js/process.exit 1))
-            (cmd-validate (first rest)))
+          (if (seq rest)
+            (cmd-validate (first rest))
+            ;; No path given: read structure.src from .fmod.json
+            (-> (p/let [{:keys [config config-path]} (config/read-config)
+                        path-mod (js/require "path")
+                        project-root (.dirname path-mod config-path)
+                        src-dir (get-in config [:structure :src] "src")]
+                  (cmd-validate (fs/join project-root src-dir)))
+                (p/catch (fn [err]
+                           (print-err "Error: " (ex-message err))
+                           (print-err "Usage: fmod validate <mod-path>")
+                           (js/process.exit 1)))))
 
           "parse"
           (cond

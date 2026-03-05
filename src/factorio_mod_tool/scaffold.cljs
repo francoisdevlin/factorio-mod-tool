@@ -30,9 +30,11 @@
 
 (defn- fmod-json [mod-name]
   (js/JSON.stringify
-   (clj->js {:name    mod-name
-              :version "0.1.0"
-              :rcon    {:host "localhost" :port 27015}})
+   (clj->js {:name      mod-name
+              :version   "0.1.0"
+              :structure {:src "src" :test "test" :dist "dist"}
+              :rcon      {:host "localhost" :port 27015}
+              :pack      {:exclude []}})
    nil 2))
 
 (def ^:private data-lua
