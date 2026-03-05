@@ -115,10 +115,13 @@
               statuses (caps/format-status capabilities)]
         (println "fmod doctor — capability detection")
         (println)
-        (doseq [{:keys [capability available detail install]} statuses]
+        (doseq [{:keys [capability available detail install suggestion]} statuses]
           (if available
-            (println (str "  OK " capability
-                          (when (not-empty detail) (str " (" detail ")"))))
+            (do
+              (println (str "  OK " capability
+                            (when (not-empty detail) (str " (" detail ")"))))
+              (when suggestion
+                (println (str "     Suggestion: " suggestion))))
             (println (str "  -- " capability " (not found)"
                           (when install (str "\n     " install))))))
         (println)

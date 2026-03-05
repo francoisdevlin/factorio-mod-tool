@@ -18,6 +18,7 @@
           (is (contains? result :luarocks))
           (is (contains? result :busted))
           (is (contains? result :lua))
+          (is (contains? result :factorio))
           (is (contains? result :factorio-rcon))
           (is (contains? result :factorio-test))
           ;; Each value has :available key
@@ -43,6 +44,18 @@
     (is (false? (caps/available? caps-map :busted)))
     (is (false? (caps/available? caps-map :missing)))))
 
+(deftest detect-capability-map-result
+  (async done
+    (-> (p/let [_ (caps/reset-cache!)
+                result (caps/detect-capability :factorio {})]
+          ;; factorio detect returns a map — should have :available key
+          (is (contains? result :available))
+          ;; If available and not in PATH, should have a suggestion
+          (when (and (:available result) (:suggestion result))
+            (is (string? (:suggestion result))))
+          (done))
+        (p/catch (fn [err] (is false (str "Unexpected: " (ex-message err))) (done))))))
+
 (deftest format-status-returns-vec
   (let [caps-map {:lua {:available true :detail "/usr/bin/lua"}
                   :busted {:available false :detail nil}}
@@ -55,3 +68,16 @@
     ;; Unavailable ones have install instructions
     (is (some? (:install (first statuses))))
     (is (nil? (:install (second statuses))))))
+
+(deftest format-status-includes-suggestion
+  (let [caps-map {:factorio {:available true
+                              :detail "/opt/factorio/bin/factorio"
+                              :suggestion "Add to PATH: export PATH=\"/opt/factorio/bin:$PATH\""}}
+        statuses (caps/format-status caps-map)]
+    (is (= 1 (count statuses)))
+    (is (= "factorio" (:capability (first statuses))))
+    (is (true? (:available (first statuses))))
+    (is (= "Add to PATH: export PATH=\"/opt/factorio/bin:$PATH\""
+           (:suggestion (first statuses))))
+    ;; Available caps should NOT have install instructions
+    (is (nil? (:install (first statuses))))))
