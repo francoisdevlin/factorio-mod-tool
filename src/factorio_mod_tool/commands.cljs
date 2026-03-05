@@ -195,6 +195,30 @@
       (p/resolved {:pong true :timestamp (.toISOString (js/Date.))})))
 
    (command
+    "get-preferences"
+    "Get current user preferences."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (p/resolved @state/preferences)))
+
+   (command
+    "set-preference"
+    "Set a user preference. Broadcasts the change to all connected clients."
+    {:type       "object"
+     :properties {:key   {:type        "string"
+                          :description "Preference key (e.g. \"theme\")"}
+                  :value {:type        "string"
+                          :description "Preference value (e.g. \"dark\", \"light\", \"factorio\")"}}
+     :required   ["key" "value"]}
+    (fn [{:keys [key value]}]
+      (swap! state/preferences assoc (keyword key) value)
+      (state/broadcast! {:type "preference-change"
+                          :key  key
+                          :value value})
+      (p/resolved @state/preferences)))
+
+   (command
     "check"
     "Check Lua files for syntax errors. Supports offline parsing or live validation against a running Factorio instance."
     {:type       "object"

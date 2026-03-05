@@ -53,6 +53,9 @@
 ;; Set of clients that have subscribed to the live event stream
 (defonce ws-subscribers (atom #{}))
 
+;; User preferences (theme, etc.)
+(defonce preferences (atom {:theme "dark"}))
+
 (defn broadcast!
   "Send a message to all subscribed WebSocket clients."
   [msg]
