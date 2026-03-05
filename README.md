@@ -224,9 +224,10 @@ Available MCP tools: `validate-mod`, `parse-lua`, `lint-mod`, `pack-mod`, `rcon-
 
 ```bash
 # Watch mode (auto-rebuild on save)
+npx shadow-cljs watch server gui   # Server + GUI in one process (recommended)
 npx shadow-cljs watch cli          # CLI
-npx shadow-cljs watch server       # MCP server
-npx shadow-cljs watch gui          # GUI (browser)
+npx shadow-cljs watch server       # MCP server only
+npx shadow-cljs watch gui          # GUI (browser) only
 npx shadow-cljs watch test         # Tests
 
 # Run tests
@@ -235,6 +236,8 @@ npx shadow-cljs compile test
 # ClojureScript REPL
 npx shadow-cljs node-repl
 ```
+
+> **Tip:** `shadow-cljs watch` accepts multiple build IDs. Running `npx shadow-cljs watch server gui` compiles both the Node server and browser GUI in a single process with hot-reload. You still need to run `node out/server.js` in a separate terminal to start the HTTP server on port 3000.
 
 ## Project Structure
 
