@@ -292,11 +292,21 @@
                (when-let [theme (:theme res)]
                  (dispatch! [:set-theme theme]))))
       (.catch (fn [_])))
-  ;; RCON health
+  ;; RCON health — also derive rcon-connections for the hero panel
   (-> (ws/send-command! "GET" "/api/rcon/health")
       (.then (fn [res]
                (when-let [conns (:connections res)]
-                 (swap! db/app-db assoc-in [:server :rcon-health] conns))))
+                 (swap! db/app-db assoc-in [:server :rcon-health] conns)
+                 ;; Derive connection list from health data so hero panel works
+                 ;; even if status fetch returned before RCON connected
+                 (let [conn-list (mapv (fn [[instance-name info]]
+                                         {:instance       (name instance-name)
+                                          :host           (:host info)
+                                          :port           (:port info)
+                                          :last-query-at  nil})
+                                       conns)]
+                   (when (seq conn-list)
+                     (swap! db/app-db assoc-in [:server :rcon-connections] conn-list))))))
       (.catch (fn [_])))
   ;; Project state
   (dispatch! [:cmd/fetch-project]))
