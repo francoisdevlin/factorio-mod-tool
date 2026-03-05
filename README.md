@@ -226,9 +226,62 @@ The MCP server exposes the same functionality to AI coding assistants (e.g., Cla
 
 ```bash
 node out/server.js
+node out/server.js --project /path/to/my-mod   # Open a project on startup
 ```
 
-Available MCP tools: `validate-mod`, `parse-lua`, `lint-mod`, `pack-mod`, `rcon-exec`, `rcon-inspect`, `repl-eval`, `repl-history`, `repl-inspect`.
+### Claude Code Setup
+
+Add the following to your Claude Code MCP settings (`.mcp.json` in your project root or `~/.claude/mcp.json` globally):
+
+```json
+{
+  "mcpServers": {
+    "factorio-mod-tool": {
+      "command": "node",
+      "args": ["/absolute/path/to/out/server.js", "--project", "/path/to/my-mod"]
+    }
+  }
+}
+```
+
+The `--project` flag is optional. If provided, the server opens the mod project on startup (reads `.fmod.json`, builds the file tree, and auto-connects RCON if configured). You can also open a project later via the `open-project` tool.
+
+The server communicates over **stdio JSON-RPC** — Claude Code manages the process lifecycle automatically.
+
+> **HTTP+SSE transport** is planned but not yet available. Currently only stdio is supported.
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `validate-mod` | Validate mod structure, info.json, load order, and dependencies |
+| `parse-lua` | Parse Lua source code and return the AST |
+| `lint-mod` | Run lint rules (deprecated APIs, naming, data-lifecycle violations) |
+| `check` | Check Lua files for syntax errors (offline or live via RCON) |
+| `check-lua-live` | Send a project Lua file to Factorio via RCON for load-testing |
+| `pack-mod` | Bundle mod into a distributable zip |
+| `open-project` | Open a project directory as active context |
+| `get-project` | Get current project state (path, config, file tree) |
+| `list-files` | List all files in the opened project |
+| `read-file` | Read file contents from the opened project |
+| `rcon-exec` | Execute a command on a connected Factorio instance |
+| `rcon-inspect` | Query game state via RCON |
+| `rcon-query` | Structured RCON queries (prototypes, entities, recipes, etc.) |
+| `rcon-query-catalog` | List available RCON query categories |
+| `rcon-health` | Get RCON connection health status |
+| `rcon-heartbeat` | Send a heartbeat probe to check RCON connection |
+| `rcon-start-heartbeat` | Start periodic RCON heartbeat monitoring |
+| `rcon-stop-heartbeat` | Stop periodic RCON heartbeat monitoring |
+| `repl-eval` | Evaluate Lua code against a running Factorio instance |
+| `repl-history` | View REPL command history |
+| `repl-inspect` | Structured game state inspection (entities, recipes, forces, surface) |
+| `status` | Server health and connected instances |
+| `capabilities` | Detect external tool availability (Lua, LuaRocks, Factorio) |
+| `diagnostics` | Current diagnostics for loaded projects |
+| `ping` | Health check (returns pong) |
+| `get-preferences` | Get current user preferences |
+| `set-preference` | Set a user preference |
+| `reload-config` | Reload .fmod.json from disk |
 
 ## Tech Stack
 
