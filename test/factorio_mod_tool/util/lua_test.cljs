@@ -33,3 +33,60 @@
         (p/catch (fn [_err]
                    (is true "Expected parse error")
                    (done))))))
+
+(deftest parse-with-comments-disabled
+  (async done
+    (-> (lua/parse "-- a comment\nlocal x = 1" {:comments false})
+        (p/then (fn [ast]
+                  (is (= "Chunk" (:type ast)))
+                  (is (nil? (:comments ast)))
+                  (done)))
+        (p/catch (fn [err]
+                   (is false (str "Parse failed: " (.-message err)))
+                   (done))))))
+
+(deftest parse-with-locations-disabled
+  (async done
+    (-> (lua/parse "local x = 1" {:locations false})
+        (p/then (fn [ast]
+                  (is (= "Chunk" (:type ast)))
+                  (let [stmt (first (:body ast))]
+                    (is (nil? (:loc stmt))))
+                  (done)))
+        (p/catch (fn [err]
+                   (is false (str "Parse failed: " (.-message err)))
+                   (done))))))
+
+(deftest parse-with-ranges-disabled
+  (async done
+    (-> (lua/parse "local x = 1" {:ranges false})
+        (p/then (fn [ast]
+                  (is (= "Chunk" (:type ast)))
+                  (let [stmt (first (:body ast))]
+                    (is (nil? (:range stmt))))
+                  (done)))
+        (p/catch (fn [err]
+                   (is false (str "Parse failed: " (.-message err)))
+                   (done))))))
+
+(deftest parse-table-constructor
+  (async done
+    (-> (lua/parse "local t = {a = 1, b = 2}")
+        (p/then (fn [ast]
+                  (is (= "Chunk" (:type ast)))
+                  (is (= 1 (count (:body ast))))
+                  (done)))
+        (p/catch (fn [err]
+                   (is false (str "Parse failed: " (.-message err)))
+                   (done))))))
+
+(deftest parse-empty-string
+  (async done
+    (-> (lua/parse "")
+        (p/then (fn [ast]
+                  (is (= "Chunk" (:type ast)))
+                  (is (empty? (:body ast)))
+                  (done)))
+        (p/catch (fn [err]
+                   (is false (str "Parse failed: " (.-message err)))
+                   (done))))))
