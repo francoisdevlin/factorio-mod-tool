@@ -10,6 +10,7 @@
             [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.state :as state]
             [factorio-mod-tool.http.server :as http-server]
+            [factorio-mod-tool.rcon.client :as rcon]
             [factorio-mod-tool.util.config :as config]))
 
 ;; ---------------------------------------------------------------------------
@@ -92,12 +93,19 @@
   ;; naturally exits when no listeners remain, but stays alive if the HTTP
   ;; server is running.
   (js/process.stdin.on "end" (fn [] nil))
+  ;; Clean up heartbeat scheduler on shutdown
+  (js/process.on "SIGINT" (fn [] (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
+  (js/process.on "SIGTERM" (fn [] (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
+  ;; Inject queue/submit! into RCON client to avoid circular dependency
+  (rcon/set-queue-submit! queue/submit!)
   ;; Initialize state (load preferences from disk) and start HTTP+WS server
   (-> (p/let [_ (state/init!)
               config-result (-> (config/read-config)
                                 (p/catch (fn [_] {:config {} :config-path nil})))
               port (parse-port-arg (:config config-result))]
-        (http-server/start-server! port))
+        (http-server/start-server! port)
+        ;; Start global RCON heartbeat scheduler
+        (rcon/start-heartbeat-scheduler!))
       (p/catch (fn [err]
                  (js/process.stderr.write (str "Warning: HTTP server failed to start: " (ex-message err) "\n"))))))

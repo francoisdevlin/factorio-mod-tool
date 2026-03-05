@@ -4,9 +4,21 @@
             [factorio-mod-tool.state :as state]
             ["rcon-client" :refer [Rcon]]))
 
+;; Forward-declared queue submit fn, set at startup to avoid circular dep
+(defonce ^:private queue-submit! (atom nil))
+
+(defn set-queue-submit!
+  "Inject the queue/submit! function to avoid circular dependency."
+  [submit-fn]
+  (reset! queue-submit! submit-fn))
+
 (def ^:private default-heartbeat-interval-ms
   "Default heartbeat interval: 15 seconds."
   15000)
+
+(def ^:private smart-skip-threshold-ms
+  "Skip heartbeat if a real query was sent within this window (30 seconds)."
+  30000)
 
 (def ^:private heartbeat-command
   "Lightest RCON command for connection health check.
@@ -96,15 +108,29 @@
                       :error    (ex-message err)}))))
     (p/resolved {:instance instance-name :health :unknown :error "No connection"})))
 
+(defn- recently-queried?
+  "Returns true if the connection had a real query within the smart-skip window."
+  [instance-name]
+  (when-let [{:keys [last-query-at]} (state/get-rcon instance-name)]
+    (when last-query-at
+      (let [last-ms (.getTime (js/Date. last-query-at))
+            now-ms  (.getTime (js/Date.))]
+        (< (- now-ms last-ms) smart-skip-threshold-ms)))))
+
 (defn start-heartbeat!
-  "Start periodic heartbeat for a connection.
+  "Start periodic heartbeat for a connection with smart skip.
+   Skips the heartbeat if a real RCON query was sent within the last 30s.
    Options: {:interval-ms 15000} (default 15s)."
   [instance-name & [{:keys [interval-ms]
                      :or   {interval-ms default-heartbeat-interval-ms}}]]
   (when-let [old-timer (:heartbeat-timer (state/get-rcon instance-name))]
     (js/clearInterval old-timer))
   (let [timer (js/setInterval
-               (fn [] (heartbeat instance-name))
+               (fn []
+                 (when-not (recently-queried? instance-name)
+                   (if-let [submit @queue-submit!]
+                     (submit "rcon-heartbeat" {:instance instance-name})
+                     (heartbeat instance-name))))
                interval-ms)]
     (swap! state/app-state assoc-in [:connection :instances instance-name :heartbeat-timer] timer)
     ;; Send initial heartbeat immediately
@@ -139,3 +165,39 @@
       :heartbeat-failures (or (:heartbeat-failures v) 0)
       :host               (:host v)
       :port               (:port v)})))
+
+;; ---------------------------------------------------------------------------
+;; Global heartbeat scheduler
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private global-heartbeat-timer (atom nil))
+
+(defn stop-heartbeat-scheduler!
+  "Stop the global heartbeat scheduler. Called on server shutdown."
+  []
+  (when-let [timer @global-heartbeat-timer]
+    (js/clearInterval timer)
+    (reset! global-heartbeat-timer nil))
+  {:heartbeat-scheduler :stopped})
+
+(defn start-heartbeat-scheduler!
+  "Start a global periodic task that heartbeats all active RCON connections.
+   Connections with recent query activity (< 30s) are skipped.
+   Called once at server startup."
+  [& [{:keys [interval-ms]
+       :or   {interval-ms default-heartbeat-interval-ms}}]]
+  (stop-heartbeat-scheduler!)
+  (let [timer (js/setInterval
+               (fn []
+                 (doseq [[instance-name _conn] @state/rcon-connections]
+                   (when-not (recently-queried? instance-name)
+                     (if-let [submit @queue-submit!]
+                       (submit "rcon-heartbeat" {:instance instance-name})
+                       (heartbeat instance-name)))))
+               interval-ms)]
+    (reset! global-heartbeat-timer timer)
+    (js/process.stderr.write
+     (str "RCON heartbeat scheduler started (interval: " interval-ms "ms, skip threshold: " smart-skip-threshold-ms "ms)\n"))
+    {:heartbeat-scheduler :started
+     :interval-ms interval-ms
+     :skip-threshold-ms smart-skip-threshold-ms}))
