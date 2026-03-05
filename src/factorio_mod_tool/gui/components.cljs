@@ -202,6 +202,49 @@
            [:p.theme-option-desc desc]])]]]]))
 
 ;; ---------------------------------------------------------------------------
+;; Connection dashboard
+;; ---------------------------------------------------------------------------
+
+(defn- health-class [health]
+  (case health
+    "alive"       "health-alive"
+    "unreachable" "health-unreachable"
+    "timeout"     "health-timeout"
+    "health-unknown"))
+
+(defn- health-label [health]
+  (case health
+    "alive"       "Alive"
+    "unreachable" "Unreachable"
+    "timeout"     "Timeout"
+    "Unknown"))
+
+(defn connection-panel []
+  (let [health-map @state/rcon-health]
+    [:div.connection-panel
+     [:div.panel-header "RCON Connections"]
+     (if (empty? health-map)
+       [:div.empty-state "No RCON connections active"]
+       [:div.connection-list
+        (for [[instance-name info] health-map]
+          (let [health (or (:health info) "unknown")]
+            ^{:key instance-name}
+            [:div.connection-card
+             [:div.connection-header
+              [:span.connection-name instance-name]
+              [:span.health-badge {:class (health-class health)}
+               (health-label health)]]
+             [:div.connection-details
+              (when (:host info)
+                [:span.connection-host (str (:host info) ":" (:port info))])
+              (when (:last-heartbeat-at info)
+                [:span.connection-heartbeat
+                 (str "Last heartbeat: " (:last-heartbeat-at info))])
+              (when (pos? (or (:failures info) 0))
+                [:span.connection-failures
+                 (str "Failures: " (:failures info))])]]))])]))
+
+;; ---------------------------------------------------------------------------
 ;; Section routing
 ;; ---------------------------------------------------------------------------
 
@@ -211,7 +254,7 @@
                  [file-tree-panel]
                  [center-panel]
                  [diagnostics-panel]]
-    :connection [placeholder-panel "Connection" "RCON connection status dashboard"]
+    :connection [connection-panel]
     :prototypes [placeholder-panel "Prototypes" "Browse and inspect all prototypes"]
     :blueprints [placeholder-panel "Blueprints" "Blueprint lab viewer"]
     :tech-tree  [placeholder-panel "Tech Tree" "Technology tree viewer"]

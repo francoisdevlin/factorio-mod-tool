@@ -28,7 +28,12 @@
    {:command "rcon-inspect" :method :post :path "/api/rcon/inspect"}
    {:command "repl-eval"    :method :post :path "/api/repl/eval"}
    {:command "repl-inspect"    :method :post :path "/api/repl/inspect"}
-   {:command "set-preference"  :method :post :path "/api/preferences"}])
+   {:command "set-preference"  :method :post :path "/api/preferences"}
+   ;; RCON heartbeat
+   {:command "rcon-health"          :method :get  :path "/api/rcon/health"}
+   {:command "rcon-heartbeat"       :method :post :path "/api/rcon/heartbeat"}
+   {:command "rcon-start-heartbeat" :method :post :path "/api/rcon/heartbeat/start"}
+   {:command "rcon-stop-heartbeat"  :method :post :path "/api/rcon/heartbeat/stop"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers

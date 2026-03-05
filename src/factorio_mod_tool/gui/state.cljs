@@ -34,3 +34,6 @@
 
 ;; Current theme: "dark" (default), "light", or "factorio"
 (defonce current-theme (r/atom "dark"))
+
+;; RCON connection health: map of instance-name -> {:health, :last-heartbeat-at, :failures}
+(defonce rcon-health (r/atom {}))

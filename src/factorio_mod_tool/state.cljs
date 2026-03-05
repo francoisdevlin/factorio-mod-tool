@@ -8,9 +8,13 @@
 (defonce mod-state (atom {}))
 
 ;; Map of instance-name (string) -> RCON connection
-;; {:host   "localhost"
-;;  :port   27015
-;;  :conn   <Rcon instance>}
+;; {:host               "localhost"
+;;  :port               27015
+;;  :conn               <Rcon instance>
+;;  :health             :alive | :unreachable | :timeout | :unknown
+;;  :last-heartbeat-at  <ISO string or nil>
+;;  :heartbeat-failures 0
+;;  :heartbeat-timer    <timer-id or nil>}
 (defonce rcon-connections (atom {}))
 
 (defn get-mod
@@ -41,7 +45,24 @@
 (defn remove-rcon!
   "Removes an RCON connection from tracked state."
   [instance-name]
+  (when-let [timer (:heartbeat-timer (get @rcon-connections instance-name))]
+    (js/clearInterval timer))
   (swap! rcon-connections dissoc instance-name))
+
+(defn update-rcon-health!
+  "Update health status for an RCON connection after a heartbeat."
+  [instance-name health-status]
+  (swap! rcon-connections update instance-name
+         (fn [conn]
+           (if (= health-status :alive)
+             (assoc conn
+                    :health :alive
+                    :last-heartbeat-at (.toISOString (js/Date.))
+                    :heartbeat-failures 0)
+             (let [failures (inc (or (:heartbeat-failures conn) 0))]
+               (assoc conn
+                      :health (if (>= failures 3) :unreachable health-status)
+                      :heartbeat-failures failures))))))
 
 ;; ---------------------------------------------------------------------------
 ;; WebSocket state
