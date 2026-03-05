@@ -189,7 +189,7 @@
   (stop-heartbeat-scheduler!)
   (let [timer (js/setInterval
                (fn []
-                 (doseq [[instance-name _conn] @state/rcon-connections]
+                 (doseq [[instance-name _conn] (get-in @state/app-state [:connection :instances])]
                    (when-not (recently-queried? instance-name)
                      (if-let [submit @queue-submit!]
                        (submit "rcon-heartbeat" {:instance instance-name})
