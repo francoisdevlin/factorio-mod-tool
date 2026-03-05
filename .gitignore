@@ -6,6 +6,7 @@
 .beads/
 .nrepl-port
 .shadow-cljs/
+.cpcache/
 node_modules/
 out/
 resources/public/js/
