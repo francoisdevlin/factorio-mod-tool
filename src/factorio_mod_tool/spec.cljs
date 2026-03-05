@@ -15,7 +15,7 @@
 ;; ---------------------------------------------------------------------------
 
 ;; info.json contents (parsed)
-(s/def :project/info map?)
+(s/def :project/info (s/nilable map?))
 
 ;; Vector of relative file paths
 (s/def :project/files (s/coll-of string? :kind vector?))
