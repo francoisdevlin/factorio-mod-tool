@@ -54,7 +54,7 @@
 (defonce ws-subscribers (atom #{}))
 
 ;; User preferences (theme, etc.)
-(defonce preferences (atom {:theme "dark"}))
+(defonce preferences (atom {:theme "factorio"}))
 
 (defn broadcast!
   "Send a message to all subscribed WebSocket clients."
