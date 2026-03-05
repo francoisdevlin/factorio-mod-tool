@@ -140,6 +140,8 @@
          (fn [resolve _reject]
            (.listen server port
              (fn []
+               (reset! state/server-port port)
+               (reset! state/server-started-at (.toISOString (js/Date.)))
                (js/process.stderr.write (str "factorio-mod-tool HTTP server listening on port " port "\n"))
                (js/process.stderr.write (str "  REST API: http://localhost:" port "/api/status\n"))
                (js/process.stderr.write (str "  WebSocket: ws://localhost:" port "/ws\n"))
