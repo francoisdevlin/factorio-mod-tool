@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
+            [factorio-mod-tool.http.sse :as sse]
             [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.http.static :as static]
@@ -122,6 +123,14 @@
       ;; CORS preflight
       (= method "options")
       (handle-cors-preflight req res)
+
+      ;; MCP SSE transport: GET /mcp/sse
+      (and (= method "get") (= url "/mcp/sse"))
+      (sse/handle-sse-connect req res)
+
+      ;; MCP SSE transport: POST /mcp
+      (and (= method "post") (.startsWith raw-url "/mcp"))
+      (sse/handle-mcp-post req res)
 
       ;; API routes
       :else

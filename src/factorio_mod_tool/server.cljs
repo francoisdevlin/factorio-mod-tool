@@ -10,6 +10,7 @@
             [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.state :as state]
             [factorio-mod-tool.http.server :as http-server]
+            [factorio-mod-tool.http.sse :as sse]
             [factorio-mod-tool.rcon.client :as rcon]
             [factorio-mod-tool.scanner :as scanner]
             [factorio-mod-tool.util.config :as config]))
@@ -106,6 +107,8 @@
   (js/process.on "SIGINT" (fn [] (scanner/stop-scanner!) (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
   (js/process.on "SIGTERM" (fn [] (scanner/stop-scanner!) (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
+  ;; Inject MCP session into SSE transport to avoid circular dependency
+  (sse/set-mcp-session! session)
   ;; Inject queue/submit! into RCON client to avoid circular dependency
   (rcon/set-queue-submit! queue/submit!)
   ;; Inject queue/submit! into scanner to avoid circular dependency
