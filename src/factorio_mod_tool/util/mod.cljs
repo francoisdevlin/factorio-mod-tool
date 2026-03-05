@@ -19,16 +19,23 @@
     (->> (js->clj entries)
          (filterv #(re-find #"\.lua$" %)))))
 
+(defn list-all-files
+  "List all files in a mod directory recursively.
+   Returns a promise of a vector of relative file paths."
+  [mod-path]
+  (fs/list-files-recursive mod-path))
+
 (defn read-mod-dir
   "Read a mod directory and return a promise of a mod info map.
    The map contains:
      :path  - absolute path to the mod
      :info  - parsed info.json contents
-     :files - vector of .lua filenames"
+     :files - vector of all relative file paths"
   [mod-path]
   (p/let [abs-path  (fs/resolve-path mod-path)
-          info      (read-info-json abs-path)
-          lua-files (list-lua-files abs-path)]
+          info      (-> (read-info-json abs-path)
+                        (p/catch (fn [_] nil)))
+          all-files (list-all-files abs-path)]
     {:path  abs-path
      :info  info
-     :files lua-files}))
+     :files all-files}))

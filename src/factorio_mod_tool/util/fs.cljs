@@ -37,3 +37,24 @@
   "Resolve a path to absolute."
   [& segments]
   (apply (.-resolve path-mod) segments))
+
+(defn relative
+  "Return path relative to base."
+  [base filepath]
+  (.relative path-mod base filepath))
+
+(defn list-files-recursive
+  "Recursively list all files under dirpath.
+   Returns a promise of a vector of paths relative to dirpath."
+  [dirpath]
+  (p/let [entries (.readdir fsp dirpath #js {:withFileTypes true})]
+    (p/let [results
+            (p/all
+             (map (fn [entry]
+                    (let [full (join dirpath (.-name entry))]
+                      (if (.isDirectory entry)
+                        (p/let [sub (list-files-recursive full)]
+                          (mapv #(join (.-name entry) %) sub))
+                        (p/resolved [(.-name entry)]))))
+                  entries))]
+      (vec (apply concat results)))))
