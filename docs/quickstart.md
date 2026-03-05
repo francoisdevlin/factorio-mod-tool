@@ -1,8 +1,6 @@
 # Quickstart: Factorio Mod Tool
 
-This guide walks you through building and using the Factorio Mod Tool CLI.
-By the end, you'll have validated a mod directory and parsed both valid and
-invalid Lua — confirming the tool works correctly.
+Get from zero to checking your mod files in under 5 minutes.
 
 ## Prerequisites
 
@@ -16,31 +14,67 @@ node --version
 npm --version
 ```
 
-## 1. Build the CLI
+## 1. Install the CLI
 
-Clone the repository and build:
+Clone the repository, build, and link the `fmod` command:
 
 ```bash
 git clone https://github.com/francoisdevlin/factorio-mod-tool.git
 cd factorio-mod-tool
 npm install
-npx shadow-cljs compile cli
+npm run build:cli
+npm link
 ```
 
-The CLI is now available at `out/cli.js`:
+Verify the install:
 
 ```bash
-node out/cli.js --help
+fmod --help
 ```
 
-## 2. Validate a Mod
+You should see the list of available commands. If `fmod` is not found, you can
+always use `node out/cli.js` instead.
+
+## 2. Check Lua Syntax (Offline)
+
+The `check` command validates Lua files for syntax errors using a built-in
+parser. No Factorio server needed.
+
+```bash
+fmod check data.lua control.lua
+```
+
+**Example — valid files:**
+
+```
+Checking (offline via luaparse):
+
+  ✓ data.lua
+  ✓ control.lua
+
+  2 passed, 0 failed
+```
+
+**Example — file with a syntax error:**
+
+```
+Checking (offline via luaparse):
+
+  ✓ data.lua
+  ✗ control.lua: [1:8] '=' expected near 'oops'
+
+  1 passed, 1 failed
+```
+
+Exit code is `0` when all files pass, `1` when any file fails.
+
+## 3. Validate a Mod Directory
 
 The `validate` command checks a Factorio mod directory for structural
-correctness — verifying required files, entry points, load order, and
-info.json fields.
+correctness — required files, entry points, load order, and info.json fields.
 
 ```bash
-node out/cli.js validate /path/to/my-factorio-mod
+fmod validate ./my-mod
 ```
 
 A typical Factorio mod directory looks like:
@@ -56,7 +90,7 @@ my-mod/
         └── locale.cfg
 ```
 
-**Example output** for a valid mod:
+**Example — valid mod:**
 
 ```
 Validating: ./my-mod
@@ -64,7 +98,7 @@ Validating: ./my-mod
   ✓ No issues found
 ```
 
-**Example output** for a mod with issues:
+**Example — mod with issues:**
 
 ```
 Validating: ./my-mod
@@ -77,57 +111,100 @@ Validating: ./my-mod
   1 error(s), 1 warning(s), 0 info
 ```
 
-Exit code is `0` when no errors are found, `1` when errors are present.
+## 4. Setting Up Factorio for RCON
 
-## 3. Parse Lua Files
+RCON (Remote Console) lets `fmod` send Lua code to a running Factorio instance
+for live validation. This catches errors that offline parsing misses — like
+references to undefined globals or Factorio-specific API issues.
 
-The `parse` command parses a Lua source file and prints the AST as JSON.
+### Option A: Headless Server (Recommended for CI/Automation)
 
-### From a file
-
-```bash
-node out/cli.js parse data.lua
-```
-
-### From stdin
+Start a dedicated Factorio headless server with RCON enabled:
 
 ```bash
-echo 'local x = 42' | node out/cli.js parse -
+./factorio --start-server save.zip \
+  --rcon-port 27015 \
+  --rcon-password secret
 ```
 
-**Example output:**
+### Option B: Regular Game with RCON
 
-```json
-{
-  "type": "Chunk",
-  "body": [
-    {
-      "type": "LocalStatement",
-      "variables": [
-        { "type": "Identifier", "name": "x" }
-      ],
-      "init": [
-        { "type": "NumericLiteral", "value": 42 }
-      ]
-    }
-  ]
-}
-```
-
-### Parsing invalid Lua
-
-When given broken Lua, the tool prints an error message and exits with code 1:
+Add RCON flags when launching Factorio for play:
 
 ```bash
-echo 'funtion oops()' | node out/cli.js parse -
-# Parse error: [1:8] '=' expected near 'oops'
+./factorio --rcon-port 27015 --rcon-password secret
 ```
 
-## 4. Copy-Paste Lua Snippets
+Or edit your Factorio launch options in Steam:
+`--rcon-port 27015 --rcon-password secret`
 
-Use these snippets to test the tool yourself.
+### Verify RCON is Working
 
-### Valid Lua — Factorio mod control script
+Once Factorio is running with RCON, test the connection:
+
+```bash
+fmod check --live --password secret data.lua
+```
+
+If you see `Checking (live via RCON):` followed by results, RCON is working.
+If you see `RCON connection failed`, double-check that:
+
+- Factorio is running and fully loaded (past the main menu / map loaded)
+- The port (`27015`) and password (`secret`) match your launch flags
+- No firewall is blocking the port
+
+## 5. Live Syntax Checking via RCON
+
+With RCON connected, `fmod check --live` sends each file's source to Factorio's
+built-in `load()` function for validation:
+
+```bash
+fmod check --live --password secret data.lua control.lua
+```
+
+**Example — valid files:**
+
+```
+Checking (live via RCON):
+
+  ✓ data.lua
+  ✓ control.lua
+
+  2 passed, 0 failed
+```
+
+**Example — file with an error caught by Factorio:**
+
+```
+Checking (live via RCON):
+
+  ✓ data.lua
+  ✗ control.lua: [string "..."]:3: unexpected symbol near 'funtion'
+
+  1 passed, 1 failed
+```
+
+### RCON Connection Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--host <host>` | `localhost` | RCON host address |
+| `--port <port>` | `27015` | RCON port |
+| `--password <pass>` | *(none)* | RCON password |
+
+**Example with all options:**
+
+```bash
+fmod check --live --host 192.168.1.10 --port 27015 --password mypass *.lua
+```
+
+## 6. Copy-Paste Examples
+
+Try these snippets to see both passing and failing results.
+
+### Valid Lua — Factorio control script
+
+Save as `test_control.lua`:
 
 ```lua
 -- control.lua: Register event handlers for a Factorio mod
@@ -140,10 +217,17 @@ script.on_event(defines.events.on_player_created, function(event)
 end)
 ```
 
+```bash
+fmod check test_control.lua
+# ✓ test_control.lua
+```
+
 ### Valid Lua — Factorio data prototype
 
+Save as `test_data.lua`:
+
 ```lua
--- data.lua: Define a custom item and recipe
+-- data.lua: Define a custom item
 data:extend({
   {
     type = "item",
@@ -157,7 +241,14 @@ data:extend({
 })
 ```
 
+```bash
+fmod check test_data.lua
+# ✓ test_data.lua
+```
+
 ### Invalid Lua — Missing `end` keyword
+
+Save as `test_broken.lua`:
 
 ```lua
 -- BROKEN: function body never closed
@@ -169,7 +260,14 @@ function setup_player(player)
 -- missing 'end' for the function
 ```
 
+```bash
+fmod check test_broken.lua
+# ✗ test_broken.lua: [8:1] '<eof>' expected near '<eof>'
+```
+
 ### Invalid Lua — Typo in keyword
+
+Save as `test_typo.lua`:
 
 ```lua
 -- BROKEN: 'funtion' is not a keyword
@@ -178,40 +276,29 @@ funtion on_init()
 end
 ```
 
-## What to Expect
+```bash
+fmod check test_typo.lua
+# ✗ test_typo.lua: [2:9] '=' expected near 'on_init'
+```
 
-| Input | `parse` result |
-|-------|----------------|
-| Valid Lua | JSON AST, exit code 0 |
-| Invalid Lua | Error message to stderr, exit code 1 |
-
-| Input | `validate` result |
-|-------|-------------------|
-| Valid mod directory | "No issues found", exit code 0 |
-| Mod with issues | Diagnostics with icons and suggestions, exit code 0 or 1 |
-| Missing info.json | Error diagnostic, exit code 1 |
-
-## Advanced: MCP Server Setup
-
-For integration with MCP clients (e.g., Claude Desktop), you can run the
-MCP server instead of the CLI:
+### Offline vs Live comparison
 
 ```bash
-npx shadow-cljs compile server
-node out/server.js
+# Offline — catches syntax errors only
+fmod check test_broken.lua test_typo.lua
+
+# Live — catches syntax errors AND Factorio-specific issues
+fmod check --live --password secret test_broken.lua test_typo.lua
 ```
 
-The server communicates over stdio using JSON-RPC. Configure it in your
-MCP client by adding to `claude_desktop_config.json`:
+## Quick Reference
 
-```json
-{
-  "mcpServers": {
-    "factorio-mod-tool": {
-      "command": "node",
-      "args": ["out/server.js"],
-      "cwd": "/path/to/factorio-mod-tool"
-    }
-  }
-}
-```
+| Task | Command |
+|------|---------|
+| Check Lua syntax (offline) | `fmod check *.lua` |
+| Check Lua syntax (live) | `fmod check --live --password secret *.lua` |
+| Validate mod structure | `fmod validate ./my-mod` |
+| Parse Lua to AST | `fmod parse data.lua` |
+| Parse from stdin | `echo 'local x = 1' \| fmod parse -` |
+| Create new mod project | `fmod new-project my-mod` |
+| Show help | `fmod --help` |
