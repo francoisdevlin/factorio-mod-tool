@@ -41,6 +41,9 @@
     (not (string? (:version config)))
     (conj "Missing required field: version (must be a string)")))
 
+(def ^:private default-log
+  {:heartbeats false})
+
 (defn- apply-defaults
   "Apply default values for optional fields."
   [config]
@@ -48,7 +51,8 @@
       (update :structure #(merge default-structure %))
       (update :rcon #(merge default-rcon %))
       (update :pack #(merge default-pack %))
-      (update :capabilities #(or % {}))))
+      (update :capabilities #(or % {}))
+      (update :log #(merge default-log %))))
 
 (defn- inject-rcon-password
   "Inject RCON password from FMOD_RCON_PASSWORD env var.

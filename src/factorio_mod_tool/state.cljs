@@ -216,6 +216,39 @@
   ([thread-key] (get-in @app-state [:telemetry :threads thread-key])))
 
 ;; ---------------------------------------------------------------------------
+;; Config file watcher (hot-reload)
+;; ---------------------------------------------------------------------------
+
+(defonce ^:private config-watcher (atom nil))
+
+(defn stop-config-watcher!
+  "Stop watching .fmod.json for changes."
+  []
+  (when-let [watcher @config-watcher]
+    (.close watcher)
+    (reset! config-watcher nil)))
+
+(defn start-config-watcher!
+  "Watch the project's .fmod.json for changes and reload config into app-state.
+   Call after open-project! sets :config-path."
+  []
+  (stop-config-watcher!)
+  (when-let [config-path (get-in @app-state [:project :config-path])]
+    (let [fs-mod (js/require "fs")
+          watcher (.watch fs-mod config-path
+                    (fn [_event-type _filename]
+                      (-> (p/let [content (fs/read-file config-path)
+                                  raw (-> content js/JSON.parse (js->clj :keywordize-keys true))]
+                            (swap! app-state assoc-in [:project :config]
+                                   (-> raw
+                                       (update :log #(merge {:heartbeats false} %)))))
+                          (p/catch (fn [err]
+                                     (js/process.stderr.write
+                                      (str "Warning: failed to reload " config-path ": "
+                                           (ex-message err) "\n")))))))]
+      (reset! config-watcher watcher))))
+
+;; ---------------------------------------------------------------------------
 ;; Project open
 ;; ---------------------------------------------------------------------------
 
@@ -283,6 +316,8 @@
                  (assoc-in [:project :config-path] config-path)
                  (assoc-in [:project :file-tree] file-tree)
                  (assoc-in [:project :mods mod-path] mod-data))))
+    ;; Start watching .fmod.json for hot-reload of config (e.g. log settings)
+    (start-config-watcher!)
     {:path        abs-path
      :config      config
      :config-path config-path
