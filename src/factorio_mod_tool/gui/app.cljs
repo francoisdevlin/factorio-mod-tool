@@ -38,6 +38,12 @@
                (when-let [theme (:theme res)]
                  (reset! state/current-theme theme)
                  (.setAttribute (.-documentElement js/document) "data-theme" theme))))
+      (.catch (fn [_])))
+  ;; Fetch RCON connection health
+  (-> (ws/send-command! "GET" "/api/rcon/health")
+      (.then (fn [res]
+               (when-let [conns (:connections res)]
+                 (reset! state/rcon-health conns))))
       (.catch (fn [_]))))
 
 (defn- setup-ws-handlers []
@@ -60,6 +66,12 @@
               (when (= (:key msg) "theme")
                 (reset! state/current-theme (:value msg))
                 (.setAttribute (.-documentElement js/document) "data-theme" (:value msg)))
+
+              "rcon-health"
+              (swap! state/rcon-health assoc (:instance msg)
+                     {:health            (:health msg)
+                      :last-heartbeat-at (:last-heartbeat-at msg)
+                      :failures          (or (:failures msg) 0)})
 
               nil))))
 

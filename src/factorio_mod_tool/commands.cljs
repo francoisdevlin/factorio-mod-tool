@@ -219,6 +219,52 @@
       (p/resolved @state/preferences)))
 
    (command
+    "rcon-heartbeat"
+    "Send a heartbeat probe to a connected Factorio instance to check connection health."
+    {:type       "object"
+     :properties {:instance {:type        "string"
+                             :description "Name of the RCON connection"}}
+     :required   ["instance"]}
+    (fn [{:keys [instance]}]
+      (rcon/heartbeat instance)))
+
+   (command
+    "rcon-start-heartbeat"
+    "Start periodic heartbeat monitoring for an RCON connection."
+    {:type       "object"
+     :properties {:instance    {:type        "string"
+                                :description "Name of the RCON connection"}
+                  :interval-ms {:type        "number"
+                                :description "Heartbeat interval in milliseconds (default: 15000)"}}
+     :required   ["instance"]}
+    (fn [{:keys [instance interval-ms]}]
+      (p/resolved
+       (rcon/start-heartbeat! instance (when interval-ms {:interval-ms interval-ms})))))
+
+   (command
+    "rcon-stop-heartbeat"
+    "Stop periodic heartbeat monitoring for an RCON connection."
+    {:type       "object"
+     :properties {:instance {:type        "string"
+                             :description "Name of the RCON connection"}}
+     :required   ["instance"]}
+    (fn [{:keys [instance]}]
+      (p/resolved (rcon/stop-heartbeat! instance))))
+
+   (command
+    "rcon-health"
+    "Get connection health status for all RCON connections or a specific one."
+    {:type       "object"
+     :properties {:instance {:type        "string"
+                             :description "Name of a specific RCON connection (optional, omit for all)"}}}
+    (fn [{:keys [instance]}]
+      (p/resolved
+       (if instance
+         (or (rcon/connection-health instance)
+             {:error "Connection not found" :instance instance})
+         {:connections (rcon/connection-health)}))))
+
+   (command
     "check"
     "Check Lua files for syntax errors. Supports offline parsing or live validation against a running Factorio instance."
     {:type       "object"
