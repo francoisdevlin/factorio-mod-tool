@@ -7,7 +7,8 @@
             [factorio-mod-tool.util.fs :as fs]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.diagnostic :as diag]
-            [factorio-mod-tool.rcon.client :as rcon]))
+            [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.scaffold :as scaffold]))
 
 ;; ---------------------------------------------------------------------------
 ;; Output formatting
@@ -80,6 +81,28 @@
 (defn cmd-lint [_mod-path]
   (print-err "lint is not yet implemented")
   (js/process.exit 1))
+
+(defn cmd-new-project [project-name]
+  (-> (p/let [result (scaffold/new-project project-name)]
+        (println (str "Created new Factorio mod project: " (:name result)))
+        (println (str "  " (:path result)))
+        (println)
+        (println "Project structure:")
+        (println "  src/info.json")
+        (println "  src/data.lua")
+        (println "  src/control.lua")
+        (println "  src/locale/en/locale.cfg")
+        (println "  test/control_test.lua")
+        (println "  .fmod.json")
+        (println "  .gitignore")
+        (println)
+        (println "Next steps:")
+        (println "  cd" project-name)
+        (println "  fmod validate src/")
+        (js/process.exit 0))
+      (p/catch (fn [err]
+                 (print-err "Error: " (ex-message err))
+                 (js/process.exit 1)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Check command — offline (luaparse) and live (RCON) Lua validation
@@ -186,6 +209,7 @@
   "Usage: fmod <command> [args]
 
 Commands:
+  new-project <name>    Create a new Factorio mod project
   validate <mod-path>   Validate a Factorio mod directory
   parse <file.lua>      Parse a Lua file and print the AST
   parse -               Parse Lua from stdin
@@ -206,7 +230,8 @@ Examples:
   fmod validate ./my-mod
   fmod parse data.lua
   fmod check data.lua control.lua
-  fmod check --live --host localhost --port 27015 --password secret *.lua")
+  fmod check --live --host localhost --port 27015 --password secret *.lua
+  fmod new-project my-awesome-mod")
 
 (defn- print-usage []
   (println usage-text))
@@ -273,6 +298,13 @@ Examples:
                 (print-err "Usage: fmod lint <mod-path>")
                 (js/process.exit 1))
             (cmd-lint (first rest)))
+
+          "new-project"
+          (if (empty? rest)
+            (do (print-err "Error: new-project requires a project name")
+                (print-err "Usage: fmod new-project <name>")
+                (js/process.exit 1))
+            (cmd-new-project (first rest)))
 
           ;; unknown command
           (do (print-err (str "Unknown command: " cmd))

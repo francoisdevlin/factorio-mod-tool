@@ -44,6 +44,16 @@
   [base filepath]
   (.relative path-mod base filepath))
 
+(defn write-file
+  "Write content to a file as UTF-8. Returns a promise."
+  [filepath content]
+  (.writeFile fsp filepath content "utf8"))
+
+(defn mkdir
+  "Create a directory (and parents). Returns a promise."
+  [dirpath]
+  (.mkdir fsp dirpath #js {:recursive true}))
+
 (defn list-files-recursive
   "Recursively list all files under dirpath.
    Returns a promise of a vector of paths relative to dirpath."
