@@ -1,8 +1,8 @@
 # Quickstart: Factorio Mod Tool
 
-This guide walks you through building, starting, and using the Factorio Mod Tool
-MCP server. By the end, you'll have validated a mod directory and parsed both
-valid and invalid Lua — confirming the tool works correctly.
+This guide walks you through building and using the Factorio Mod Tool CLI.
+By the end, you'll have validated a mod directory and parsed both valid and
+invalid Lua — confirming the tool works correctly.
 
 ## Prerequisites
 
@@ -16,56 +16,31 @@ node --version
 npm --version
 ```
 
-## 1. Build and Start the MCP Server
+## 1. Build the CLI
 
-Clone the repository and start the server:
+Clone the repository and build:
 
 ```bash
 git clone https://github.com/francoisdevlin/factorio-mod-tool.git
 cd factorio-mod-tool
-```
-
-Install dependencies and compile:
-
-```bash
 npm install
-npx shadow-cljs compile server
+npx shadow-cljs compile cli
 ```
 
-Start the MCP server (communicates over stdio using JSON-RPC):
+The CLI is now available at `out/cli.js`:
 
 ```bash
-node out/server.js
+node out/cli.js --help
 ```
 
-The server is now listening on stdin for MCP tool-call requests. You can also
-configure it in your MCP client (e.g., Claude Desktop) by adding to your
-`claude_desktop_config.json`:
+## 2. Validate a Mod
 
-```json
-{
-  "mcpServers": {
-    "factorio-mod-tool": {
-      "command": "node",
-      "args": ["out/server.js"],
-      "cwd": "/path/to/factorio-mod-tool"
-    }
-  }
-}
-```
+The `validate` command checks a Factorio mod directory for structural
+correctness — verifying required files, entry points, load order, and
+info.json fields.
 
-## 2. Using `validate-mod`
-
-The `validate-mod` tool checks a Factorio mod directory for structural
-correctness — verifying required files exist and Lua sources parse without
-errors.
-
-### Example: Validate a mod directory
-
-Point it at any Factorio mod directory (one containing `info.json`):
-
-```
-validate-mod({ "path": "/path/to/my-factorio-mod" })
+```bash
+node out/cli.js validate /path/to/my-factorio-mod
 ```
 
 A typical Factorio mod directory looks like:
@@ -81,207 +56,74 @@ my-mod/
         └── locale.cfg
 ```
 
-**Expected output** for a valid mod:
+**Example output** for a valid mod:
 
 ```
-✓ info.json found and valid
-✓ data.lua — parsed successfully
-✓ control.lua — parsed successfully
-2 Lua files checked, 0 errors
+Validating: ./my-mod
+
+  ✓ No issues found
 ```
 
-**Expected output** for a mod with issues:
+**Example output** for a mod with issues:
 
 ```
-✓ info.json found and valid
-✓ data.lua — parsed successfully
-✗ control.lua — parse error at line 12: unexpected symbol near '}'
-2 Lua files checked, 1 error
+Validating: ./my-mod
+
+  ✗ Required file missing: info.json
+    → Create info.json in the mod root directory
+  ⚠ Mod has no data.lua or control.lua — it won't affect the game
+    → Create data.lua (for prototypes) or control.lua (for runtime scripts)
+
+  1 error(s), 1 warning(s), 0 info
 ```
 
-## 3. Using `parse-lua` with Valid Lua
+Exit code is `0` when no errors are found, `1` when errors are present.
 
-The `parse-lua` tool parses a Lua source string and returns the abstract syntax
-tree (AST). This is useful for inspecting how the tool interprets Lua code.
+## 3. Parse Lua Files
 
-### Example: Simple assignment
+The `parse` command parses a Lua source file and prints the AST as JSON.
 
+### From a file
+
+```bash
+node out/cli.js parse data.lua
 ```
-parse-lua({ "source": "local x = 42" })
+
+### From stdin
+
+```bash
+echo 'local x = 42' | node out/cli.js parse -
 ```
 
-**Expected output:**
+**Example output:**
 
 ```json
 {
-  "status": "ok",
-  "ast": {
-    "type": "Chunk",
-    "body": [
-      {
-        "type": "LocalStatement",
-        "variables": [
-          { "type": "Identifier", "name": "x" }
-        ],
-        "init": [
-          { "type": "NumericLiteral", "value": 42 }
-        ]
-      }
-    ]
-  }
+  "type": "Chunk",
+  "body": [
+    {
+      "type": "LocalStatement",
+      "variables": [
+        { "type": "Identifier", "name": "x" }
+      ],
+      "init": [
+        { "type": "NumericLiteral", "value": 42 }
+      ]
+    }
+  ]
 }
 ```
 
-### Example: Function definition (common in Factorio mods)
+### Parsing invalid Lua
 
-```
-parse-lua({ "source": "function on_tick(event)\n  local player = game.players[1]\n  player.print('Hello')\nend" })
-```
+When given broken Lua, the tool prints an error message and exits with code 1:
 
-**Expected output:**
-
-```json
-{
-  "status": "ok",
-  "ast": {
-    "type": "Chunk",
-    "body": [
-      {
-        "type": "FunctionDeclaration",
-        "identifier": { "type": "Identifier", "name": "on_tick" },
-        "parameters": [
-          { "type": "Identifier", "name": "event" }
-        ],
-        "body": [
-          {
-            "type": "LocalStatement",
-            "variables": [
-              { "type": "Identifier", "name": "player" }
-            ],
-            "init": [
-              {
-                "type": "IndexExpression",
-                "base": {
-                  "type": "MemberExpression",
-                  "base": { "type": "Identifier", "name": "game" },
-                  "identifier": { "type": "Identifier", "name": "players" }
-                },
-                "index": { "type": "NumericLiteral", "value": 1 }
-              }
-            ]
-          },
-          {
-            "type": "CallStatement",
-            "expression": {
-              "type": "CallExpression",
-              "base": {
-                "type": "MemberExpression",
-                "base": { "type": "Identifier", "name": "player" },
-                "identifier": { "type": "Identifier", "name": "print" }
-              },
-              "arguments": [
-                { "type": "StringLiteral", "value": "Hello" }
-              ]
-            }
-          }
-        ]
-      }
-    ]
-  }
-}
+```bash
+echo 'funtion oops()' | node out/cli.js parse -
+# Parse error: [1:8] '=' expected near 'oops'
 ```
 
-### Example: Table constructor (Factorio prototype data)
-
-```
-parse-lua({ "source": "data:extend({\n  {\n    type = 'item',\n    name = 'my-item',\n    stack_size = 100\n  }\n})" })
-```
-
-This is the most common pattern in Factorio `data.lua` files — extending the
-prototype table with new definitions.
-
-## 4. Using `parse-lua` with Invalid Lua
-
-When given broken Lua, `parse-lua` returns a structured error indicating what
-went wrong and where.
-
-### Example: Missing `end` keyword
-
-```
-parse-lua({ "source": "function foo()\n  print('hello')" })
-```
-
-**Expected output:**
-
-```json
-{
-  "status": "error",
-  "error": {
-    "message": "'end' expected near <eof>",
-    "line": 2,
-    "column": 17
-  }
-}
-```
-
-### Example: Unmatched parenthesis
-
-```
-parse-lua({ "source": "print('hello'" })
-```
-
-**Expected output:**
-
-```json
-{
-  "status": "error",
-  "error": {
-    "message": "')' expected near <eof>",
-    "line": 1,
-    "column": 14
-  }
-}
-```
-
-### Example: Invalid assignment target
-
-```
-parse-lua({ "source": "123 = 'bad'" })
-```
-
-**Expected output:**
-
-```json
-{
-  "status": "error",
-  "error": {
-    "message": "unexpected symbol near '123'",
-    "line": 1,
-    "column": 1
-  }
-}
-```
-
-### Example: Unclosed string literal
-
-```
-parse-lua({ "source": "local msg = 'hello" })
-```
-
-**Expected output:**
-
-```json
-{
-  "status": "error",
-  "error": {
-    "message": "unfinished string near ''hello'",
-    "line": 1,
-    "column": 13
-  }
-}
-```
-
-## 5. Copy-Paste Lua Snippets
+## 4. Copy-Paste Lua Snippets
 
 Use these snippets to test the tool yourself.
 
@@ -296,14 +138,6 @@ script.on_event(defines.events.on_player_created, function(event)
     player.insert({ name = "iron-plate", count = 50 })
   end
 end)
-
-script.on_event(defines.events.on_tick, function(event)
-  if event.tick % 600 == 0 then
-    for _, player in pairs(game.connected_players) do
-      player.print("10 seconds have passed")
-    end
-  end
-end)
 ```
 
 ### Valid Lua — Factorio data prototype
@@ -316,28 +150,14 @@ data:extend({
     name = "super-fuel",
     icon = "__my-mod__/graphics/icons/super-fuel.png",
     icon_size = 64,
-    subgroup = "raw-material",
-    order = "z[super-fuel]",
     stack_size = 50,
     fuel_category = "chemical",
     fuel_value = "100MJ",
   },
-  {
-    type = "recipe",
-    name = "super-fuel",
-    energy_required = 10,
-    ingredients = {
-      { type = "item", name = "solid-fuel", amount = 5 },
-      { type = "item", name = "uranium-235", amount = 1 },
-    },
-    results = {
-      { type = "item", name = "super-fuel", amount = 1 },
-    },
-  },
 })
 ```
 
-### Invalid Lua — Missing `end` (common mistake)
+### Invalid Lua — Missing `end` keyword
 
 ```lua
 -- BROKEN: function body never closed
@@ -349,19 +169,6 @@ function setup_player(player)
 -- missing 'end' for the function
 ```
 
-### Invalid Lua — Mismatched brackets
-
-```lua
--- BROKEN: table constructor has mismatched braces
-data:extend({
-  {
-    type = "item",
-    name = "broken-item",
-    stack_size = 100
-  -- missing closing '}' for inner table
-})
-```
-
 ### Invalid Lua — Typo in keyword
 
 ```lua
@@ -371,25 +178,40 @@ funtion on_init()
 end
 ```
 
-### Invalid Lua — Stray operator
-
-```lua
--- BROKEN: unexpected '==' in assignment context
-local x == 42
-```
-
 ## What to Expect
 
-| Input | `parse-lua` result |
+| Input | `parse` result |
+|-------|----------------|
+| Valid Lua | JSON AST, exit code 0 |
+| Invalid Lua | Error message to stderr, exit code 1 |
+
+| Input | `validate` result |
 |-------|-------------------|
-| Valid Lua | `status: "ok"` with full AST |
-| Invalid Lua | `status: "error"` with line/column and message |
+| Valid mod directory | "No issues found", exit code 0 |
+| Mod with issues | Diagnostics with icons and suggestions, exit code 0 or 1 |
+| Missing info.json | Error diagnostic, exit code 1 |
 
-| Input | `validate-mod` result |
-|-------|----------------------|
-| Valid mod directory | All files pass, 0 errors |
-| Mod with broken Lua | Error report with file, line, and message |
-| Missing `info.json` | Structural error (not a valid mod) |
+## Advanced: MCP Server Setup
 
-The tool gives you fast, reliable feedback on whether your mod's Lua is
-syntactically correct — catching errors before you load the mod in Factorio.
+For integration with MCP clients (e.g., Claude Desktop), you can run the
+MCP server instead of the CLI:
+
+```bash
+npx shadow-cljs compile server
+node out/server.js
+```
+
+The server communicates over stdio using JSON-RPC. Configure it in your
+MCP client by adding to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "factorio-mod-tool": {
+      "command": "node",
+      "args": ["out/server.js"],
+      "cwd": "/path/to/factorio-mod-tool"
+    }
+  }
+}
+```
