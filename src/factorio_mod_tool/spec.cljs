@@ -1,5 +1,5 @@
 (ns factorio-mod-tool.spec
-  "clojure.spec definitions for the server-side app state schema.
+  "cljs.spec definitions for the server-side app-state schema.
    Three top-level keys: :project, :connection, :preferences."
   (:require [cljs.spec.alpha :as s]))
 
@@ -37,7 +37,6 @@
 (s/def :project/current-path (s/nilable string?))
 
 ;; Project config from .fmod.json
-(s/def :project/config (s/nilable map?))
 (s/def :project/config-path (s/nilable string?))
 
 ;; File tree nodes for GUI
@@ -62,11 +61,12 @@
 (s/def :connection/heartbeat-failures nat-int?)
 (s/def :connection/heartbeat-timer any?)  ; JS timer id
 (s/def :connection/last-query-at ::iso-timestamp)
+(s/def :connection/status #{:connected :disconnected :error})
 
 ;; Single RCON connection entry
 (s/def :connection/entry
   (s/keys :req-un [:connection/host :connection/port]
-          :opt-un [:connection/conn :connection/health
+          :opt-un [:connection/conn :connection/health :connection/status
                    :connection/last-heartbeat-at :connection/heartbeat-failures
                    :connection/heartbeat-timer :connection/last-query-at]))
 

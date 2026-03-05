@@ -5,9 +5,9 @@
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
             [factorio-mod-tool.queue :as queue]
+            [factorio-mod-tool.state :as state]
             [factorio-mod-tool.util.config :as config]
-            [factorio-mod-tool.http.static :as static]
-            [factorio-mod-tool.state :as state]))
+            [factorio-mod-tool.http.static :as static]))
 
 (def ^:private http (js/require "http"))
 (def ^:private WebSocketServer (.-WebSocketServer (js/require "ws")))

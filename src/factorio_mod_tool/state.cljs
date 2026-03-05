@@ -188,6 +188,11 @@
   [k v]
   (swap! app-state assoc-in [:preferences k] v))
 
+(defn update-preferences!
+  "Merge new preference values into preferences."
+  [prefs]
+  (swap! app-state update :preferences merge prefs))
+
 ;; ---------------------------------------------------------------------------
 ;; Project open
 ;; ---------------------------------------------------------------------------

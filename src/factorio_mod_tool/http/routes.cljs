@@ -16,19 +16,21 @@
   [;; Queries (GET)
    {:command "status"       :method :get  :path "/api/status"}
    {:command "capabilities" :method :get  :path "/api/capabilities"}
-   {:command "diagnostics"  :method :get  :path "/api/diagnostics"}
-   {:command "repl-history"    :method :get  :path "/api/repl/history"}
-   {:command "get-preferences" :method :get  :path "/api/preferences"}
+   {:command "diagnostics"      :method :get  :path "/api/diagnostics"}
+   {:command "get-preferences"  :method :get  :path "/api/preferences"}
+   {:command "get-state"        :method :get  :path "/api/state"}
+   {:command "repl-history"     :method :get  :path "/api/repl/history"}
    ;; Mutations (POST)
    {:command "validate-mod" :method :post :path "/api/validate"}
    {:command "check"        :method :post :path "/api/check"}
    {:command "lint-mod"     :method :post :path "/api/lint"}
    {:command "parse-lua"    :method :post :path "/api/parse"}
+   {:command "set-preference"      :method :post :path "/api/preferences"}
+   {:command "update-preferences" :method :post :path "/api/preferences/bulk"}
    {:command "rcon-exec"    :method :post :path "/api/rcon/exec"}
    {:command "rcon-inspect" :method :post :path "/api/rcon/inspect"}
    {:command "repl-eval"    :method :post :path "/api/repl/eval"}
    {:command "repl-inspect"    :method :post :path "/api/repl/inspect"}
-   {:command "set-preference"  :method :post :path "/api/preferences"}
    ;; RCON heartbeat
    {:command "rcon-health"          :method :get  :path "/api/rcon/health"}
    {:command "rcon-heartbeat"       :method :post :path "/api/rcon/heartbeat"}
