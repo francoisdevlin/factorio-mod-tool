@@ -195,11 +195,36 @@
         [:pre.file-code-block
          [:code {:ref #(reset! code-ref %)}]])})))
 
+(defn- image-viewer
+  "Renders a base64-encoded image with its MIME type."
+  []
+  (let [content   @state/file-content
+        mime-type (or @state/file-mime-type "image/png")]
+    [:div.image-viewer
+     [:img {:src (str "data:" mime-type ";base64," content)
+            :alt @state/selected-file
+            :style {:max-width "100%" :max-height "100%"}}]]))
+
+(defn- binary-placeholder
+  "Placeholder for non-viewable binary files."
+  []
+  [:div.binary-placeholder
+   [:div.binary-icon "\uD83D\uDCC4"]
+   [:div.binary-message "Binary file"]
+   [:div.binary-detail (str (when-let [meta @state/file-meta]
+                              (let [size (:size meta)]
+                                (cond
+                                  (nil? size)       ""
+                                  (< size 1024)     (str size " bytes")
+                                  (< size 1048576)  (str (.toFixed (/ size 1024) 1) " KB")
+                                  :else             (str (.toFixed (/ size 1048576) 1) " MB")))))]])
+
 (defn center-panel []
   [:div.center-panel
    (if @state/selected-file
-     (let [meta     @state/file-meta
-           loading? @state/file-loading?]
+     (let [meta      @state/file-meta
+           loading?  @state/file-loading?
+           file-type (or @state/file-type :text)]
        [:<>
         [:div.file-tab-bar
          [:div.file-tab.active
@@ -208,9 +233,11 @@
             [:span.file-tab-mtime (relative-time (:mtime meta))])]]
         [:div.file-content
          (cond
-           loading?              [:div.file-loading "Loading..."]
-           @state/file-content   [highlighted-code]
-           :else                 [:div.empty-state "Select a file to view its contents."])]])
+           loading?                [:div.file-loading "Loading..."]
+           (= file-type :image)   [image-viewer]
+           (= file-type :binary)  [binary-placeholder]
+           @state/file-content     [highlighted-code]
+           :else                   [:div.empty-state "Select a file to view its contents."])]])
      [:div.empty-state "Select a file from the tree to view"])])
 
 ;; ---------------------------------------------------------------------------

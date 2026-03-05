@@ -12,6 +12,12 @@
   [filepath]
   (.readFile fsp filepath "utf8"))
 
+(defn read-file-base64
+  "Read a file as base64-encoded string. Returns a promise."
+  [filepath]
+  (p/let [buf (.readFile fsp filepath)]
+    (.toString buf "base64")))
+
 (defn read-dir
   "List entries in a directory. Returns a promise of a JS array of strings."
   [dirpath]
