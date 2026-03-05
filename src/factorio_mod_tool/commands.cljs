@@ -159,8 +159,9 @@
         :rcon-connections  (mapv (fn [[k v]]
                                   {:instance k
                                    :host     (:host v)
-                                   :port     (:port v)})
-                                @state/rcon-connections)})))
+                                   :port     (:port v)
+                                   :status   (:status v)})
+                                (get-in @state/app-state [:connection :instances]))})))
 
    (command
     "capabilities"
@@ -184,7 +185,51 @@
        {:mods (into {}
                     (map (fn [[path data]]
                            [path {:diagnostics (:diagnostics data)}]))
-                    @state/mod-state)})))
+                    (get-in @state/app-state [:project :mods]))})))
+
+   (command
+    "get-preferences"
+    "Get current user preferences (theme, density, layout, etc.)."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (p/resolved (state/get-preferences))))
+
+   (command
+    "update-preferences"
+    "Update user preferences. Merged with existing preferences and persisted to disk."
+    {:type       "object"
+     :properties {:theme        {:type "string"
+                                 :description "Theme: light, dark, or factorio"
+                                 :enum ["light" "dark" "factorio"]}
+                  :density      {:type "string"
+                                 :description "UI density: compact, comfortable, or spacious"
+                                 :enum ["compact" "comfortable" "spacious"]}
+                  :layout       {:type "object"
+                                 :description "Layout preferences"}
+                  :default-paths {:type "object"
+                                  :description "Default paths configuration"}
+                  :editor       {:type "object"
+                                 :description "Editor settings"}}}
+    (fn [params]
+      (let [prefs (cond-> params
+                    (string? (:theme params))    (update :theme keyword)
+                    (string? (:density params))  (update :density keyword))]
+        (state/update-preferences! prefs)
+        (p/resolved (state/get-preferences)))))
+
+   (command
+    "get-state"
+    "Get a snapshot of the full server app state (project, connection, preferences)."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (let [state @state/app-state
+            ;; Strip opaque RCON connection objects from the response
+            sanitized (update-in state [:connection :instances]
+                        (fn [instances]
+                          (into {} (map (fn [[k v]] [k (dissoc v :conn)])) instances)))]
+        (p/resolved sanitized))))
 
    (command
     "check"

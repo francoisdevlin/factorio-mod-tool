@@ -5,6 +5,7 @@
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
             [factorio-mod-tool.queue :as queue]
+            [factorio-mod-tool.state :as state]
             [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.http.static :as static]))
 
@@ -143,7 +144,9 @@
    when the server is listening."
   [port]
   (queue/set-broadcast! broadcast!)
-  (-> (p/let [^js server (.createServer http handle-request)
+  (state/set-broadcast! broadcast!)
+  (-> (p/let [_ (state/load-preferences!)
+              ^js server (.createServer http handle-request)
               wss (WebSocketServer. #js {:server server})]
         (setup-websocket wss)
         (js/Promise.

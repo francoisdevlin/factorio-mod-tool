@@ -16,13 +16,16 @@
   [;; Queries (GET)
    {:command "status"       :method :get  :path "/api/status"}
    {:command "capabilities" :method :get  :path "/api/capabilities"}
-   {:command "diagnostics"  :method :get  :path "/api/diagnostics"}
-   {:command "repl-history" :method :get  :path "/api/repl/history"}
+   {:command "diagnostics"      :method :get  :path "/api/diagnostics"}
+   {:command "get-preferences"  :method :get  :path "/api/preferences"}
+   {:command "get-state"        :method :get  :path "/api/state"}
+   {:command "repl-history"     :method :get  :path "/api/repl/history"}
    ;; Mutations (POST)
    {:command "validate-mod" :method :post :path "/api/validate"}
    {:command "check"        :method :post :path "/api/check"}
    {:command "lint-mod"     :method :post :path "/api/lint"}
    {:command "parse-lua"    :method :post :path "/api/parse"}
+   {:command "update-preferences" :method :post :path "/api/preferences"}
    {:command "rcon-exec"    :method :post :path "/api/rcon/exec"}
    {:command "rcon-inspect" :method :post :path "/api/rcon/inspect"}
    {:command "repl-eval"    :method :post :path "/api/repl/eval"}
