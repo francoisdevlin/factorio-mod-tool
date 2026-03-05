@@ -23,6 +23,15 @@
 (defonce ^:private scanner-timer (atom nil))
 (defonce ^:private previous-scan (atom nil))
 
+;; Late-bound queue submit to avoid circular dependency
+;; (scanner -> queue -> commands -> scanner)
+(defonce ^:private queue-submit-fn (atom nil))
+
+(defn set-queue-submit!
+  "Inject queue/submit! at startup to avoid circular dependency."
+  [f]
+  (reset! queue-submit-fn f))
+
 (defn- scan-dir
   "Recursively scan a directory. Returns a promise of a vector of entry maps:
    {:path <relative> :type :file/:dir :mtime <iso-string> :size <bytes>}
@@ -93,8 +102,8 @@
         entries))
 
 (defn- do-scan!
-  "Perform one scan cycle. Compares with previous result, updates state and
-   broadcasts if changed."
+  "Perform one scan cycle. Compares with previous result, submits changes
+   through the command queue for unified state management and WS broadcast."
   []
   (when-let [project-path (state/current-project-path)]
     (-> (p/let [entries (scan-dir project-path project-path)
@@ -103,7 +112,9 @@
           (when (not= new-fp old-fp)
             (reset! previous-scan new-fp)
             (let [tree (entries->nested-tree entries)]
-              (swap! state/app-state assoc-in [:project :file-tree] tree))))
+              (if-let [submit! @queue-submit-fn]
+                (submit! "update-file-tree" {:tree tree})
+                (swap! state/app-state assoc-in [:project :file-tree] tree)))))
         (p/catch (fn [err]
                    (js/process.stderr.write
                     (str "Scanner error: " (ex-message err) "\n")))))))

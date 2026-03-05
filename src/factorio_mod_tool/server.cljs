@@ -108,6 +108,9 @@
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
   ;; Inject queue/submit! into RCON client to avoid circular dependency
   (rcon/set-queue-submit! queue/submit!)
+  ;; Inject queue/submit! into scanner to avoid circular dependency
+  ;; (scanner -> queue -> commands -> scanner)
+  (scanner/set-queue-submit! queue/submit!)
   ;; Initialize state (load preferences from disk) and start HTTP+WS server
   (-> (p/let [_ (state/init!)
               config-result (-> (config/read-config)

@@ -367,6 +367,18 @@
           :file-tree    (:file-tree project)}))))
 
    (command
+    "update-file-tree"
+    "Update the project file tree in state. Used internally by the directory scanner to push file tree changes through the command queue for unified state management and WebSocket broadcast."
+    {:type       "object"
+     :properties {:tree {:type        "array"
+                         :description "Nested file tree structure from the scanner"}}
+     :required   ["tree"]}
+    (fn [{:keys [tree]}]
+      (swap! state/app-state assoc-in [:project :file-tree] tree)
+      (p/resolved {:updated true
+                   :entry-count (count tree)})))
+
+   (command
     "list-files"
     "List all files in the currently opened project directory. Returns the scanned file tree with relative paths, types, mtimes, and sizes. The tree is maintained by a periodic background scanner."
     {:type "object"
