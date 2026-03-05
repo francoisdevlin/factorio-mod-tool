@@ -8,10 +8,6 @@
                 :main      factorio-mod-tool.cli/main
                 :output-to "out/cli.js"}
 
-          :http-server {:target    :node-script
-                       :main      factorio-mod-tool.http.server/main
-                       :output-to "out/http-server.js"}
-
           :gui {:target     :browser
                 :modules    {:main {:init-fn factorio-mod-tool.gui.app/init}}
                 :output-dir "resources/public/js"
