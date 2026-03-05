@@ -13,7 +13,8 @@
             [factorio-mod-tool.scaffold :as scaffold]
             [factorio-mod-tool.pipeline.dag :as dag]
             [factorio-mod-tool.pipeline.runner :as runner]
-            [factorio-mod-tool.pipeline.targets :as targets]))
+            [factorio-mod-tool.pipeline.targets :as targets]
+            [factorio-mod-tool.http.server :as http-server]))
 
 ;; ---------------------------------------------------------------------------
 ;; Output formatting
@@ -306,6 +307,7 @@ Commands:
   check <files...>      Check Lua files for syntax errors (offline)
   check --live <files>  Check Lua files via RCON against running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
+  serve                 Start HTTP + WebSocket server
   doctor                Show detected capabilities and install guidance
 
 Pipeline targets (run through DAG with dependencies):
@@ -325,7 +327,7 @@ Pipeline options:
 Check options:
   --live                Validate via RCON against a running Factorio instance
   --host <host>         RCON host (default: localhost)
-  --port <port>         RCON port (default: 27015)
+  --port <port>         RCON port (default: 27015) / HTTP server port (default: 3000)
   --password <pass>     RCON password
 
 General options:
@@ -436,6 +438,9 @@ Examples:
 
           "doctor"
           (cmd-doctor)
+
+          "serve"
+          (http-server/main)
 
           ;; Check if it's a known DAG target name
           (if (contains? dag-target-names cmd)

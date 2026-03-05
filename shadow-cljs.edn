@@ -8,6 +8,10 @@
                 :main      factorio-mod-tool.cli/main
                 :output-to "out/cli.js"}
 
+          :http-server {:target    :node-script
+                       :main      factorio-mod-tool.http.server/main
+                       :output-to "out/http-server.js"}
+
           :test {:target    :node-test
                  :output-to "out/test.js"
                  :autorun   true}}}
