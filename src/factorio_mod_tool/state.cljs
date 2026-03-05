@@ -42,3 +42,21 @@
   "Removes an RCON connection from tracked state."
   [instance-name]
   (swap! rcon-connections dissoc instance-name))
+
+;; ---------------------------------------------------------------------------
+;; WebSocket state
+;; ---------------------------------------------------------------------------
+
+;; Set of all connected WebSocket client objects
+(defonce ws-clients (atom #{}))
+
+;; Set of clients that have subscribed to the live event stream
+(defonce ws-subscribers (atom #{}))
+
+(defn broadcast!
+  "Send a message to all subscribed WebSocket clients."
+  [msg]
+  (let [data (js/JSON.stringify (clj->js msg))]
+    (doseq [client @ws-subscribers]
+      (when (= (.-readyState client) (.-OPEN client))
+        (.send client data)))))
