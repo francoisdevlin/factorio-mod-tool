@@ -117,6 +117,15 @@
   (swap! db/app-db assoc-in [:server :pipeline-results target]
          {:status status :timestamp (.toISOString (js/Date.))}))
 
+(defmethod handle-event :server/connection-state [[_ data]]
+  (let [instances (:instances data)
+        conns (mapv (fn [[name info]]
+                      (-> info
+                          (select-keys [:host :port :last-query-at])
+                          (assoc :instance name)))
+                    instances)]
+    (swap! db/app-db assoc-in [:server :rcon-connections] conns)))
+
 (defmethod handle-event :server/rcon-health [[_ data]]
   (swap! db/app-db assoc-in [:server :rcon-health (:instance data)]
          {:health            (:health data)
