@@ -219,30 +219,82 @@
     "timeout"     "Timeout"
     "Unknown"))
 
+(def ^:private stale-threshold-ms
+  "Connections with no query in this many ms are considered stale."
+  30000)
+
+(defn- relative-time
+  "Returns a human-readable relative time string for an ISO timestamp."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))
+          diff (- now then)
+          secs (Math/floor (/ diff 1000))
+          mins (Math/floor (/ secs 60))]
+      (cond
+        (< secs 5)  "just now"
+        (< secs 60) (str secs " seconds ago")
+        (< mins 60) (str mins " minute" (when (not= mins 1) "s") " ago")
+        :else       (str (Math/floor (/ mins 60)) " hour"
+                         (when (not= (Math/floor (/ mins 60)) 1) "s") " ago")))))
+
+(defn- stale?
+  "Returns true if the last query was more than stale-threshold-ms ago."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))]
+      (> (- now then) stale-threshold-ms))))
+
+(defn- connection-card
+  "Renders a single RCON connection card with last query time and health."
+  [{:keys [instance host port last-query-at]} health-info]
+  (let [is-stale (stale? last-query-at)
+        health   (or (:health health-info) "unknown")]
+    [:div.connection-card {:class (when is-stale "stale")}
+     [:div.connection-header
+      [:span.connection-dot {:class (if is-stale "stale" "active")}]
+      [:strong instance]
+      [:span.health-badge {:class (health-class health)}
+       (health-label health)]]
+     [:div.connection-details
+      [:div (str host ":" port)]
+      [:div.last-query
+       {:class (when is-stale "stale")}
+       (if last-query-at
+         (str "Last query: " (relative-time last-query-at))
+         "No queries yet")]
+      (when (:last-heartbeat-at health-info)
+        [:div (str "Last heartbeat: " (relative-time (:last-heartbeat-at health-info)))])
+      (when (pos? (or (:failures health-info) 0))
+        [:div.connection-failures (str "Failures: " (:failures health-info))])]]))
+
 (defn connection-panel []
-  (let [health-map @state/rcon-health]
-    [:div.connection-panel
-     [:div.panel-header "RCON Connections"]
-     (if (empty? health-map)
-       [:div.empty-state "No RCON connections active"]
-       [:div.connection-list
-        (for [[instance-name info] health-map]
-          (let [health (or (:health info) "unknown")]
-            ^{:key instance-name}
-            [:div.connection-card
-             [:div.connection-header
-              [:span.connection-name instance-name]
-              [:span.health-badge {:class (health-class health)}
-               (health-label health)]]
-             [:div.connection-details
-              (when (:host info)
-                [:span.connection-host (str (:host info) ":" (:port info))])
-              (when (:last-heartbeat-at info)
-                [:span.connection-heartbeat
-                 (str "Last heartbeat: " (:last-heartbeat-at info))])
-              (when (pos? (or (:failures info) 0))
-                [:span.connection-failures
-                 (str "Failures: " (:failures info))])]]))])]))
+  (let [tick (r/atom 0)
+        interval-id (atom nil)]
+    (r/create-class
+     {:component-did-mount
+      (fn [_]
+        (reset! interval-id
+                (js/setInterval #(swap! tick inc) 1000)))
+      :component-will-unmount
+      (fn [_]
+        (when @interval-id
+          (js/clearInterval @interval-id)))
+      :reagent-render
+      (fn []
+        (let [_ @tick
+              conns      @state/rcon-connections
+              health-map @state/rcon-health]
+          [:div.connection-panel
+           [:div.panel-header "RCON Connections"]
+           (if (empty? conns)
+             [:div.empty-state "No RCON connections"]
+             [:div.connection-grid
+              (for [conn conns]
+                ^{:key (:instance conn)}
+                [connection-card conn (get health-map (:instance conn))])])]))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Section routing

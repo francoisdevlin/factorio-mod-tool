@@ -14,9 +14,12 @@
    [c/console-panel]])
 
 (defn- fetch-initial-data []
-  ;; Fetch server status
+  ;; Fetch server status (includes RCON connections)
   (-> (ws/send-command! "GET" "/api/status")
-      (.then (fn [res] (reset! state/server-status res)))
+      (.then (fn [res]
+               (reset! state/server-status res)
+               (when-let [conns (:rcon-connections res)]
+                 (reset! state/rcon-connections (vec conns)))))
       (.catch (fn [_])))
   ;; Fetch capabilities
   (-> (ws/send-command! "GET" "/api/capabilities")
@@ -72,6 +75,16 @@
                      {:health            (:health msg)
                       :last-heartbeat-at (:last-heartbeat-at msg)
                       :failures          (or (:failures msg) 0)})
+
+              "rcon-state"
+              (let [{:keys [instance last-query-at]} msg]
+                (swap! state/rcon-connections
+                       (fn [conns]
+                         (mapv (fn [c]
+                                 (if (= (:instance c) instance)
+                                   (assoc c :last-query-at last-query-at)
+                                   c))
+                               conns))))
 
               nil))))
 

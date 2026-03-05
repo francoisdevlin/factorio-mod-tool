@@ -22,6 +22,10 @@
 (defn- now []
   (.toISOString (js/Date.)))
 
+(def ^:private rcon-commands
+  "Commands that involve RCON queries."
+  #{"rcon-exec" "rcon-inspect" "repl-eval" "repl-inspect"})
+
 ;; ---------------------------------------------------------------------------
 ;; Core API
 ;; ---------------------------------------------------------------------------
@@ -55,6 +59,14 @@
                                    :result    result
                                    :timestamp timestamp}]
                         (swap! event-log conj event)
+                        (when (rcon-commands command-name)
+                          (when-let [instance (:instance params)]
+                            (state/touch-rcon-query! instance)
+                            (state/broadcast!
+                             {:type     "rcon-state"
+                              :instance instance
+                              :last-query-at (:last-query-at
+                                              (state/get-rcon instance))})))
                         (state/broadcast! {:type  "event"
                                            :event event})
                         result)))

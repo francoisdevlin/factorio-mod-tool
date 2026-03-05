@@ -158,9 +158,10 @@
         :version          "0.1.0"
         :status           "running"
         :rcon-connections  (mapv (fn [[k v]]
-                                  {:instance k
-                                   :host     (:host v)
-                                   :port     (:port v)})
+                                  {:instance       k
+                                   :host           (:host v)
+                                   :port           (:port v)
+                                   :last-query-at  (:last-query-at v)})
                                 @state/rcon-connections)})))
 
    (command

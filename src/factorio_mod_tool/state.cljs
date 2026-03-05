@@ -42,6 +42,12 @@
   [instance-name conn-data]
   (swap! rcon-connections assoc instance-name conn-data))
 
+(defn touch-rcon-query!
+  "Record the current time as the last RCON query time for an instance."
+  [instance-name]
+  (swap! rcon-connections update instance-name
+         assoc :last-query-at (.toISOString (js/Date.))))
+
 (defn remove-rcon!
   "Removes an RCON connection from tracked state."
   [instance-name]
