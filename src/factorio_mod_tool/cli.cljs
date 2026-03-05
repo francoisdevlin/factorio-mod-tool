@@ -6,10 +6,14 @@
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.util.fs :as fs]
             [factorio-mod-tool.util.capabilities :as caps]
+            [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.diagnostic :as diag]
             [factorio-mod-tool.rcon.client :as rcon]
-            [factorio-mod-tool.scaffold :as scaffold]))
+            [factorio-mod-tool.scaffold :as scaffold]
+            [factorio-mod-tool.pipeline.dag :as dag]
+            [factorio-mod-tool.pipeline.runner :as runner]
+            [factorio-mod-tool.pipeline.targets :as targets]))
 
 ;; ---------------------------------------------------------------------------
 ;; Output formatting
@@ -30,7 +34,7 @@
   (js/process.stderr.write (str (apply str args) "\n")))
 
 ;; ---------------------------------------------------------------------------
-;; Commands
+;; Standalone commands (not pipeline targets)
 ;; ---------------------------------------------------------------------------
 
 (defn cmd-validate [mod-path]
@@ -78,10 +82,6 @@
               (p/catch (fn [err]
                          (print-err "Parse error: " (ex-message err))
                          (js/process.exit 1)))))))))
-
-(defn cmd-lint [_mod-path]
-  (print-err "lint is not yet implemented")
-  (js/process.exit 1))
 
 (defn cmd-new-project [project-name]
   (-> (p/let [result (scaffold/new-project project-name)]
@@ -134,43 +134,31 @@
 ;; Check command — offline (luaparse) and live (RCON) Lua validation
 ;; ---------------------------------------------------------------------------
 
-(defn- find-long-bracket-level
-  "Find a long bracket level N such that `]=*=]` with N equals doesn't appear in source."
-  [source]
+(defn- find-long-bracket-level [source]
   (loop [n 0]
     (let [close-bracket (str "]" (apply str (repeat n "=")) "]")]
       (if (str/includes? source close-bracket)
         (recur (inc n))
         n))))
 
-(defn- lua-long-string
-  "Wrap source in Lua long bracket string [=[...]=] with auto-detected level."
-  [source]
+(defn- lua-long-string [source]
   (let [n (find-long-bracket-level source)
         eq (apply str (repeat n "="))]
     (str "[" eq "[" source "]" eq "]")))
 
-(defn- rcon-check-command
-  "Build the RCON command to validate Lua source via Factorio's load()."
-  [source]
+(defn- rcon-check-command [source]
   (str "/silent-command local ok, err = load("
        (lua-long-string source)
        ") if not ok then rcon.print(err) else rcon.print('OK') end"))
 
-(defn- check-file-offline
-  "Check a single Lua file offline using luaparse. Returns a promise of
-   {:file path :status :ok|:error :message string?}."
-  [file-path]
+(defn- check-file-offline [file-path]
   (-> (p/let [source (fs/read-file file-path)
               _ast (lua/parse source)]
         {:file file-path :status :ok})
       (p/catch (fn [err]
                  {:file file-path :status :error :message (ex-message err)}))))
 
-(defn- check-file-live
-  "Check a single Lua file via RCON using Factorio's load(). Returns a promise of
-   {:file path :status :ok|:error :message string?}."
-  [instance-name file-path]
+(defn- check-file-live [instance-name file-path]
   (-> (p/let [source (fs/read-file file-path)
               cmd (rcon-check-command source)
               response (rcon/exec instance-name cmd)
@@ -181,9 +169,7 @@
       (p/catch (fn [err]
                  {:file file-path :status :error :message (ex-message err)}))))
 
-(defn- print-check-results
-  "Print check results in ✓/✗ format and exit with appropriate code."
-  [results]
+(defn- print-check-results [results]
   (let [errors (filter #(= :error (:status %)) results)]
     (doseq [{:keys [file status message]} results]
       (if (= status :ok)
@@ -199,7 +185,6 @@
    a running Factorio instance. Without --live, uses luaparse offline."
   [opts files]
   (if (:live opts)
-    ;; Live mode: connect via RCON, check each file, disconnect
     (let [instance "__check__"
           rcon-opts (cond-> {}
                       (:host opts) (assoc :host (:host opts))
@@ -218,7 +203,6 @@
                        (print-err "RCON connection failed: " msg)
                        (print-err "Ensure Factorio is running with RCON enabled.")
                        (js/process.exit 1))))))
-    ;; Offline mode: use luaparse
     (-> (p/let [results (p/all (mapv check-file-offline files))]
           (println "Checking (offline via luaparse):")
           (println)
@@ -226,6 +210,86 @@
         (p/catch (fn [err]
                    (print-err "Error: " (ex-message err))
                    (js/process.exit 1))))))
+
+;; ---------------------------------------------------------------------------
+;; Pipeline dispatch
+;; ---------------------------------------------------------------------------
+
+(def ^:private dag-target-names
+  "Set of target names that can be dispatched through the pipeline."
+  (set (map name (keys dag/default-dag))))
+
+(defn- run-pipeline
+  "Run one or more targets through the pipeline DAG.
+   Reads .fmod.json config, builds the DAG, and executes."
+  [target-key & [{:keys [only from]}]]
+  (-> (p/let [{:keys [config config-path]} (config/read-config)
+              path-mod (js/require "path")
+              project-root (.dirname path-mod config-path)
+              mod-path (fs/join project-root (get-in config [:structure :src] "src"))
+              custom-pipeline (:pipeline config)
+              merged-dag (dag/merge-custom-targets dag/default-dag custom-pipeline)
+              hooks (dag/merge-hooks custom-pipeline)
+              plan (dag/execution-plan merged-dag target-key
+                     (cond-> {}
+                       only (assoc :only true)
+                       from (assoc :from from)))
+              rcon-opts (cond-> {}
+                          (get-in config [:rcon :host]) (assoc :host (get-in config [:rcon :host]))
+                          (get-in config [:rcon :port]) (assoc :port (get-in config [:rcon :port]))
+                          (get-in config [:rcon :password]) (assoc :password (get-in config [:rcon :password])))
+              ctx {:mod-path mod-path
+                   :config config
+                   :rcon-opts rcon-opts}
+              run-fn (targets/make-run-fn ctx)
+              result (runner/execute plan merged-dag hooks run-fn
+                       {:on-start  (fn [t] (println (str "▸ " (name t))))
+                        :on-finish (fn [t s] (println (str (if (= s :ok) "  ✓" "  ✗") " " (name t))))})]
+        (println)
+        (if (= :ok (:status result))
+          (do
+            (println (str "Pipeline complete: " (count (:completed result)) " targets"))
+            (js/process.exit 0))
+          (do
+            (println (str "Pipeline failed at: " (name (:failed-target result))))
+            (js/process.exit 1))))
+      (p/catch (fn [err]
+                 (print-err "Pipeline error: " (ex-message err))
+                 (js/process.exit 1)))))
+
+(defn- run-all-pipeline
+  "Run all targets in the default pipeline."
+  []
+  (-> (p/let [{:keys [config config-path]} (config/read-config)
+              path-mod (js/require "path")
+              project-root (.dirname path-mod config-path)
+              mod-path (fs/join project-root (get-in config [:structure :src] "src"))
+              custom-pipeline (:pipeline config)
+              merged-dag (dag/merge-custom-targets dag/default-dag custom-pipeline)
+              hooks (dag/merge-hooks custom-pipeline)
+              plan (dag/all-targets-plan merged-dag)
+              rcon-opts (cond-> {}
+                          (get-in config [:rcon :host]) (assoc :host (get-in config [:rcon :host]))
+                          (get-in config [:rcon :port]) (assoc :port (get-in config [:rcon :port]))
+                          (get-in config [:rcon :password]) (assoc :password (get-in config [:rcon :password])))
+              ctx {:mod-path mod-path
+                   :config config
+                   :rcon-opts rcon-opts}
+              run-fn (targets/make-run-fn ctx)
+              result (runner/execute plan merged-dag hooks run-fn
+                       {:on-start  (fn [t] (println (str "▸ " (name t))))
+                        :on-finish (fn [t s] (println (str (if (= s :ok) "  ✓" "  ✗") " " (name t))))})]
+        (println)
+        (if (= :ok (:status result))
+          (do
+            (println (str "Pipeline complete: " (count (:completed result)) " targets"))
+            (js/process.exit 0))
+          (do
+            (println (str "Pipeline failed at: " (name (:failed-target result))))
+            (js/process.exit 1))))
+      (p/catch (fn [err]
+                 (print-err "Pipeline error: " (ex-message err))
+                 (js/process.exit 1)))))
 
 ;; ---------------------------------------------------------------------------
 ;; Usage / dispatch
@@ -244,6 +308,20 @@ Commands:
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
   doctor                Show detected capabilities and install guidance
 
+Pipeline targets (run through DAG with dependencies):
+  check                 Offline Lua syntax check (via .fmod.json config)
+  lint                  Lint rules
+  check-live            RCON Lua validation
+  test                  Run mod unit tests
+  pack                  Bundle mod into distributable zip
+  deploy                Deploy mod to Factorio mods folder
+  test-live             Run live tests against Factorio
+  all                   Run full default pipeline
+
+Pipeline options:
+  --only                Run only the specified target (skip dependencies)
+  --from <target>       Start pipeline from this target forward
+
 Check options:
   --live                Validate via RCON against a running Factorio instance
   --host <host>         RCON host (default: localhost)
@@ -258,6 +336,9 @@ Examples:
   fmod parse data.lua
   fmod check data.lua control.lua
   fmod check --live --host localhost --port 27015 --password secret *.lua
+  fmod lint
+  fmod pack
+  fmod all
   fmod new-project my-awesome-mod")
 
 (defn- print-usage []
@@ -296,8 +377,7 @@ Examples:
             (cmd-parse-file (first rest)))
 
           "check"
-          (let [;; Parse flags from rest args
-                parse-check-args
+          (let [parse-check-args
                 (fn [args]
                   (loop [args args
                          opts {}
@@ -313,18 +393,39 @@ Examples:
                           (= a "--password") (recur (subvec (vec more) 1) (assoc opts :password (first more)) files)
                           :else              (recur more opts (conj files a)))))))
                 [opts files] (parse-check-args rest)]
-            (if (empty? files)
-              (do (print-err "Error: check requires at least one Lua file")
-                  (print-err "Usage: fmod check [--live] <file.lua> [...]")
-                  (js/process.exit 1))
-              (cmd-check opts files)))
+            (if (seq files)
+              ;; Explicit file list: use direct check command (not pipeline)
+              (cmd-check opts files)
+              ;; No files: route through pipeline (uses .fmod.json config)
+              (if (:live opts)
+                (run-pipeline :check-live)
+                (run-pipeline :check))))
 
           "lint"
-          (if (empty? rest)
-            (do (print-err "Error: lint requires a mod path")
-                (print-err "Usage: fmod lint <mod-path>")
+          (if (and (seq rest) (not (str/starts-with? (first rest) "-")))
+            ;; Legacy: fmod lint <mod-path> — direct command (not pipeline)
+            (do (print-err "lint direct mode is not yet implemented")
                 (js/process.exit 1))
-            (cmd-lint (first rest)))
+            ;; No path: route through pipeline
+            (run-pipeline :lint))
+
+          "check-live"
+          (run-pipeline :check-live)
+
+          "test"
+          (run-pipeline :test)
+
+          "pack"
+          (run-pipeline :pack)
+
+          "deploy"
+          (run-pipeline :deploy)
+
+          "test-live"
+          (run-pipeline :test-live)
+
+          "all"
+          (run-all-pipeline)
 
           "new-project"
           (if (empty? rest)
@@ -336,7 +437,13 @@ Examples:
           "doctor"
           (cmd-doctor)
 
-          ;; unknown command
-          (do (print-err (str "Unknown command: " cmd))
-              (print-usage)
-              (js/process.exit 1)))))))
+          ;; Check if it's a known DAG target name
+          (if (contains? dag-target-names cmd)
+            (let [opts (cond-> {}
+                         (some #{"--only"} rest) (assoc :only true)
+                         (some #{"--from"} rest) (assoc :from (keyword (second (drop-while #(not= "--from" %) rest)))))]
+              (run-pipeline (keyword cmd) opts))
+            (do (print-err (str "Unknown command: " cmd))
+                (print-usage)
+                (js/process.exit 1))))))))
+
