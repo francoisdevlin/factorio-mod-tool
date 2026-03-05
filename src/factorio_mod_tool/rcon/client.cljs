@@ -78,6 +78,18 @@
     (p/rejected (ex-info "No RCON connection found"
                          {:instance instance-name}))))
 
+(defn- log-heartbeat?
+  "Check if heartbeat logging is enabled via project config.
+   Reads from app-state (updated by open-project! or config reload)."
+  []
+  (boolean (get-in @state/app-state [:project :config :log :heartbeats])))
+
+(defn- log-hb
+  "Write a heartbeat log line to stderr when logging is enabled."
+  [& parts]
+  (when (log-heartbeat?)
+    (js/process.stderr.write (str "[heartbeat] " (apply str parts) "\n"))))
+
 (defn heartbeat
   "Send a single heartbeat probe to a Factorio instance.
    Updates connection health state, broadcasts status, and records telemetry.
@@ -85,9 +97,11 @@
   [instance-name]
   (if-let [{:keys [conn]} (state/get-rcon instance-name)]
     (let [start-ms (.now js/Date)]
+      (log-hb "sending to " instance-name ": " heartbeat-command)
       (-> (.send conn heartbeat-command)
           (p/then (fn [response]
                     (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                    (log-hb "response from " instance-name ": " (pr-str response))
                     (let [ok? (= (.trim (str response)) "ok")]
                       (state/update-rcon-health! instance-name (if ok? :alive :unreachable))
                       (let [conn-data (state/get-rcon instance-name)]
@@ -100,6 +114,7 @@
                          :last-heartbeat-at (:last-heartbeat-at conn-data)}))))
           (p/catch (fn [err]
                      (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                     (log-hb "error from " instance-name ": " (ex-message err))
                      (state/update-rcon-health! instance-name :timeout)
                      (let [conn-data (state/get-rcon instance-name)]
                        (state/broadcast! {:type     "rcon-health"
@@ -130,7 +145,8 @@
     (js/clearInterval old-timer))
   (let [timer (js/setInterval
                (fn []
-                 (when-not (recently-queried? instance-name)
+                 (if (recently-queried? instance-name)
+                   (log-hb "skipped " instance-name " (recent query activity)")
                    (if-let [submit @queue-submit!]
                      (submit "rcon-heartbeat" {:instance instance-name})
                      (heartbeat instance-name))))
@@ -198,7 +214,8 @@
                      ;; Record idle cycle so GUI shows scheduler is alive
                      (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
                      (doseq [[instance-name _conn] instances]
-                       (when-not (recently-queried? instance-name)
+                       (if (recently-queried? instance-name)
+                         (log-hb "skipped " instance-name " (recent query activity)")
                          (if-let [submit @queue-submit!]
                            (submit "rcon-heartbeat" {:instance instance-name})
                            (heartbeat instance-name)))))))
