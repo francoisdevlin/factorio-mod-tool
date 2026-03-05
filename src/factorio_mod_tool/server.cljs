@@ -10,7 +10,8 @@
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.lint :as lint]
-            [factorio-mod-tool.rcon.client :as rcon]))
+            [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.bundle.pack :as pack]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool definitions
@@ -112,6 +113,32 @@
                                              :text (str "RCON error: " (ex-message err))}]
                                   :isError true}))))})
 
+(def pack-mod-tool
+  {:name        "pack-mod"
+   :description "Bundle a Factorio mod directory into a distributable zip file. Creates modname_version.zip with the top-level directory structure Factorio expects."
+   :inputSchema {:type       "object"
+                 :properties {:path       {:type        "string"
+                                           :description "Path to the mod directory"}
+                              :output-dir {:type        "string"
+                                           :description "Directory to write the zip file to (defaults to current directory)"}
+                              :exclude    {:type        "array"
+                                           :items       {:type "string"}
+                                           :description "Glob patterns of files to exclude from the zip"}}
+                 :required   [:path]}
+   :tool-fn     (fn [_context arguments]
+                  (let [mod-path   (:path arguments)
+                        output-dir (or (:output-dir arguments) ".")
+                        exclude    (vec (or (:exclude arguments) []))]
+                    (-> (pack/pack-mod mod-path output-dir {:exclude exclude})
+                        (p/then (fn [result]
+                                  {:content [{:type "text"
+                                              :text (pr-str result)}]
+                                   :isError false}))
+                        (p/catch (fn [err]
+                                   {:content [{:type "text"
+                                               :text (str "Pack error: " (ex-message err))}]
+                                    :isError true})))))})
+
 ;; ---------------------------------------------------------------------------
 ;; Session & context
 ;; ---------------------------------------------------------------------------
@@ -124,6 +151,7 @@
        :tools       [validate-mod-tool
                      parse-lua-tool
                      lint-mod-tool
+                     pack-mod-tool
                      rcon-exec-tool
                      rcon-inspect-tool]})))
 
