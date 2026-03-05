@@ -192,11 +192,16 @@
   (stop-heartbeat-scheduler!)
   (let [timer (js/setInterval
                (fn []
-                 (doseq [[instance-name _conn] (get-in @state/app-state [:connection :instances])]
-                   (when-not (recently-queried? instance-name)
-                     (if-let [submit @queue-submit!]
-                       (submit "rcon-heartbeat" {:instance instance-name})
-                       (heartbeat instance-name)))))
+                 (let [instances (get-in @state/app-state [:connection :instances])
+                       start-ms (.now js/Date)]
+                   (if (empty? instances)
+                     ;; Record idle cycle so GUI shows scheduler is alive
+                     (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                     (doseq [[instance-name _conn] instances]
+                       (when-not (recently-queried? instance-name)
+                         (if-let [submit @queue-submit!]
+                           (submit "rcon-heartbeat" {:instance instance-name})
+                           (heartbeat instance-name)))))))
                interval-ms)]
     (reset! global-heartbeat-timer timer)
     (js/process.stderr.write
