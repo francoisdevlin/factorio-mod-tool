@@ -115,13 +115,43 @@
   (when (= key "theme")
     (dispatch! [:set-theme value])))
 
+(defn- collect-expanded-paths
+  "Walk a tree and return a set of paths that are currently expanded."
+  [tree]
+  (reduce (fn [acc {:keys [path type children expanded?]}]
+            (let [acc (if (and (= type :dir) expanded?)
+                        (conj acc path)
+                        acc)]
+              (if children
+                (into acc (collect-expanded-paths children))
+                acc)))
+          #{}
+          tree))
+
+(defn- apply-expanded-state
+  "Walk a new tree and restore expanded? flags from a set of expanded paths."
+  [tree expanded-paths]
+  (mapv (fn [node]
+          (if (:children node)
+            (-> node
+                (assoc :expanded? (contains? expanded-paths (:path node)))
+                (update :children apply-expanded-state expanded-paths))
+            node))
+        tree))
+
 (defmethod handle-event :server/project [[_ data]]
   (swap! db/app-db
          (fn [db]
-           (-> db
-               (assoc-in [:project :current-path] (:current-path data))
-               (assoc-in [:project :config] (:config data))
-               (assoc :file-tree (or (:file-tree data) []))))))
+           (let [old-tree (:file-tree db)
+                 new-tree (or (:file-tree data) [])
+                 expanded-paths (collect-expanded-paths old-tree)
+                 merged-tree (if (seq expanded-paths)
+                               (apply-expanded-state new-tree expanded-paths)
+                               new-tree)]
+             (-> db
+                 (assoc-in [:project :current-path] (:current-path data))
+                 (assoc-in [:project :config] (:config data))
+                 (assoc :file-tree merged-tree))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Server commands (dispatch over WebSocket, results come back via broadcast)
