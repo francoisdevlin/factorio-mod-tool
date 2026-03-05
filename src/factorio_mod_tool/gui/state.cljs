@@ -31,3 +31,6 @@
 
 ;; Active navigation section
 (defonce active-section (r/atom :projects))
+
+;; Current theme: "dark" (default), "light", or "factorio"
+(defonce current-theme (r/atom "dark"))

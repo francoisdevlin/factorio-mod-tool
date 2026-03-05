@@ -31,6 +31,13 @@
                                           (:diagnostics data))
                                         mods)]
                    (reset! state/diagnostics (vec all-diags))))))
+      (.catch (fn [_])))
+  ;; Fetch preferences (theme)
+  (-> (ws/send-command! "GET" "/api/preferences")
+      (.then (fn [res]
+               (when-let [theme (:theme res)]
+                 (reset! state/current-theme theme)
+                 (.setAttribute (.-documentElement js/document) "data-theme" theme))))
       (.catch (fn [_]))))
 
 (defn- setup-ws-handlers []
@@ -48,6 +55,12 @@
               "pipeline-status"
               (reset! state/pipeline-status {:target (:target msg)
                                              :status (keyword (:status msg))})
+
+              "preference-change"
+              (when (= (:key msg) "theme")
+                (reset! state/current-theme (:value msg))
+                (.setAttribute (.-documentElement js/document) "data-theme" (:value msg)))
+
               nil))))
 
 (defn- ws-url []

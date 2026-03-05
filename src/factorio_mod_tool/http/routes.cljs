@@ -17,7 +17,8 @@
    {:command "status"       :method :get  :path "/api/status"}
    {:command "capabilities" :method :get  :path "/api/capabilities"}
    {:command "diagnostics"  :method :get  :path "/api/diagnostics"}
-   {:command "repl-history" :method :get  :path "/api/repl/history"}
+   {:command "repl-history"    :method :get  :path "/api/repl/history"}
+   {:command "get-preferences" :method :get  :path "/api/preferences"}
    ;; Mutations (POST)
    {:command "validate-mod" :method :post :path "/api/validate"}
    {:command "check"        :method :post :path "/api/check"}
@@ -26,7 +27,8 @@
    {:command "rcon-exec"    :method :post :path "/api/rcon/exec"}
    {:command "rcon-inspect" :method :post :path "/api/rcon/inspect"}
    {:command "repl-eval"    :method :post :path "/api/repl/eval"}
-   {:command "repl-inspect" :method :post :path "/api/repl/inspect"}])
+   {:command "repl-inspect"    :method :post :path "/api/repl/inspect"}
+   {:command "set-preference"  :method :post :path "/api/preferences"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers

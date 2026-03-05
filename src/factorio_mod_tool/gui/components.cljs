@@ -166,6 +166,42 @@
             [:div.diagnostic-file (:file d)])]))]))
 
 ;; ---------------------------------------------------------------------------
+;; Settings panel
+;; ---------------------------------------------------------------------------
+
+(def theme-options
+  [{:id "dark"     :label "Dark"     :desc "Default dark color scheme"}
+   {:id "light"    :label "Light"    :desc "Light backgrounds, dark text"}
+   {:id "factorio" :label "Factorio" :desc "Industrial orange/amber, inspired by the Factorio forums"}])
+
+(defn- apply-theme! [theme]
+  (.setAttribute (.-documentElement js/document) "data-theme" theme))
+
+(defn settings-panel []
+  (let [current @state/current-theme]
+    (apply-theme! current)
+    [:div.settings-panel
+     [:div.settings-section
+      [:h2.settings-heading "Appearance"]
+      [:div.settings-group
+       [:label.settings-label "Theme"]
+       [:div.theme-options
+        (for [{:keys [id label desc]} theme-options]
+          ^{:key id}
+          [:div.theme-option
+           {:class    (when (= id current) "selected")
+            :on-click (fn []
+                        (reset! state/current-theme id)
+                        (apply-theme! id)
+                        (-> (ws/send-command! "POST" "/api/preferences"
+                                              {:key "theme" :value id})
+                            (.catch (fn [_]))))}
+           [:div.theme-option-header
+            [:span.theme-radio (if (= id current) "\u25C9" "\u25CB")]
+            [:span.theme-option-label label]]
+           [:p.theme-option-desc desc]])]]]]))
+
+;; ---------------------------------------------------------------------------
 ;; Section routing
 ;; ---------------------------------------------------------------------------
 
@@ -179,7 +215,7 @@
     :prototypes [placeholder-panel "Prototypes" "Browse and inspect all prototypes"]
     :blueprints [placeholder-panel "Blueprints" "Blueprint lab viewer"]
     :tech-tree  [placeholder-panel "Tech Tree" "Technology tree viewer"]
-    :settings   [placeholder-panel "Settings" "Configuration and theme selector"]
+    :settings   [settings-panel]
     [placeholder-panel "Unknown" "Section not found"]))
 
 ;; ---------------------------------------------------------------------------
