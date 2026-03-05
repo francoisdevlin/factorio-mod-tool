@@ -22,6 +22,7 @@
 
 (defonce ^:private scanner-timer (atom nil))
 (defonce ^:private previous-scan (atom nil))
+(defonce ^:private previous-config-mtime (atom nil))
 
 ;; Late-bound queue submit to avoid circular dependency
 ;; (scanner -> queue -> commands -> scanner)
@@ -101,14 +102,33 @@
                [path type mtime size]))
         entries))
 
+(defn- check-config-change!
+  "Check if .fmod.json has changed and trigger a reload if so."
+  [project-path]
+  (let [config-file (fs/join project-path ".fmod.json")]
+    (-> (p/let [^js st (fs/stat config-file)
+                new-mtime (.toISOString (.-mtime st))
+                old-mtime @previous-config-mtime]
+          (when (and old-mtime (not= new-mtime old-mtime))
+            (reset! previous-config-mtime new-mtime)
+            (js/process.stderr.write "Config .fmod.json changed, reloading\n")
+            (if-let [submit! @queue-submit-fn]
+              (submit! "reload-config" {:path project-path})
+              nil))
+          (when-not old-mtime
+            (reset! previous-config-mtime new-mtime)))
+        (p/catch (fn [_] nil)))))
+
 (defn- do-scan!
   "Perform one scan cycle. Compares with previous result, submits changes
-   through the command queue for unified state management and WS broadcast."
+   through the command queue for unified state management and WS broadcast.
+   Also checks .fmod.json for changes and triggers config reload."
   []
   (when-let [project-path (state/current-project-path)]
     (-> (p/let [entries (scan-dir project-path project-path)
                 new-fp  (scan-fingerprint entries)
-                old-fp  @previous-scan]
+                old-fp  @previous-scan
+                _       (check-config-change! project-path)]
           (when (not= new-fp old-fp)
             (reset! previous-scan new-fp)
             (let [tree (entries->nested-tree entries)]
