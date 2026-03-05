@@ -28,9 +28,67 @@
             (fn [err _stdout _stderr]
               (resolve (nil? err)))))))
 
+(defn- file-exists?
+  "Check if a file exists at the given path. Returns a promise of boolean."
+  [path]
+  (let [fsp (.-promises (js/require "fs"))]
+    (-> (.access fsp path)
+        (p/then (fn [_] true))
+        (p/catch (fn [_] false)))))
+
+(defn- first-existing-path
+  "Given a vector of file paths, return a promise of the first one that exists,
+   or nil if none exist."
+  [paths]
+  (p/loop [remaining paths]
+    (if (empty? remaining)
+      nil
+      (p/let [exists (file-exists? (first remaining))]
+        (if exists
+          (first remaining)
+          (p/recur (rest remaining)))))))
+
+(defn- detect-factorio
+  "Multi-step detection for the Factorio binary.
+   1. Check PATH via 'which factorio'
+   2. Check overrides (from .fmod.json factorio.path)
+   3. Check common install locations
+   Returns a map with :available, :detail, and optionally :suggestion."
+  [overrides]
+  (let [home (.. js/process -env -HOME)
+        common-paths
+        [(str home "/Library/Application Support/Steam/steamapps/common/Factorio/factorio.app/Contents/MacOS/factorio")
+         "/Applications/factorio.app/Contents/MacOS/factorio"
+         (str home "/.steam/steam/steamapps/common/Factorio/bin/x64/factorio")
+         (str home "/factorio/bin/x64/factorio")
+         "C:/Program Files (x86)/Steam/steamapps/common/Factorio/bin/x64/factorio.exe"]]
+    ;; Step 1: Check PATH
+    (p/let [path-result (which "factorio")]
+      (if (not-empty path-result)
+        ;; Found in PATH — fully satisfied
+        {:available true :detail path-result}
+        ;; Step 2: Check overrides (.fmod.json factorio.path)
+        (p/let [override-path (get overrides :factorio)
+                override-exists (if override-path (file-exists? override-path) (p/resolved false))]
+          (if override-exists
+            {:available true
+             :detail override-path
+             :suggestion (str "Add to PATH: export PATH=\""
+                              (.dirname (js/require "path") override-path)
+                              ":$PATH\"")}
+            ;; Step 3: Check common install locations
+            (p/let [found (first-existing-path common-paths)]
+              (if found
+                {:available true
+                 :detail found
+                 :suggestion (str "Add to PATH: export PATH=\""
+                                  (.dirname (js/require "path") found)
+                                  ":$PATH\"")}
+                {:available false}))))))))
+
 (def capability-defs*
   "Definitions for each detectable capability.
-   Each entry: {:detect (fn [] -> promise of bool-or-path)
+   Each entry: {:detect (fn [] -> promise of bool-or-path-or-map)
                 :install \"Human-readable install instructions\"}"
   {:luarocks {:detect  (fn [_overrides] (which "luarocks"))
               :install "Install LuaRocks: https://luarocks.org/"}
@@ -42,6 +100,8 @@
                             (which path)
                             (which "lua")))
               :install "Install Lua: https://www.lua.org/download.html"}
+   :factorio {:detect  detect-factorio
+              :install "Install Factorio: https://www.factorio.com/download"}
    :factorio-rcon
               {:detect  (fn [_overrides]
                           ;; Just check if RCON env var is set (actual connection tested at runtime)
@@ -67,14 +127,20 @@
 (def ^:private cache (atom nil))
 
 (defn detect-capability
-  "Detect a single capability. Returns a promise of {:available bool :detail string?}."
+  "Detect a single capability. Returns a promise of {:available bool :detail string? :suggestion string?}.
+   Detect functions may return:
+   - nil/false: not available
+   - string: available, string is the path/detail
+   - map with :available, :detail, :suggestion: passed through directly"
   [cap-key overrides]
   (let [{:keys [detect]} (get capability-defs* cap-key)]
     (if detect
       (-> (detect overrides)
           (p/then (fn [result]
-                    {:available (boolean result)
-                     :detail (when (string? result) result)})))
+                    (cond
+                      (map? result) result
+                      (string? result) {:available true :detail result}
+                      :else {:available (boolean result)}))))
       (p/resolved {:available false :detail "Unknown capability"}))))
 
 (defn detect-all
@@ -108,10 +174,11 @@
 (defn format-status
   "Format capabilities map for human display (used by fmod doctor)."
   [capabilities]
-  (mapv (fn [[cap-key {:keys [available detail]}]]
+  (mapv (fn [[cap-key {:keys [available detail suggestion]}]]
           (let [install-msg (:install (get capability-defs* cap-key))]
-            {:capability (name cap-key)
-             :available available
-             :detail (or detail "")
-             :install (when-not available install-msg)}))
+            (cond-> {:capability (name cap-key)
+                     :available available
+                     :detail (or detail "")}
+              (not available) (assoc :install install-msg)
+              suggestion (assoc :suggestion suggestion))))
         (sort-by first capabilities)))
