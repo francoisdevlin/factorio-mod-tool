@@ -9,6 +9,7 @@
             [factorio-mod-tool.analysis.lint :as lint]
             [factorio-mod-tool.analysis.diagnostic :as diag]
             [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.repl :as repl]
             [factorio-mod-tool.state :as state]))
 
 (defn- ok [body]
@@ -144,13 +145,57 @@
                            [path {:diagnostics (:diagnostics data)}]))
                     @state/mod-state)})))
 
+(defn handle-repl-eval
+  "POST /api/repl/eval — evaluate Lua code via REPL."
+  [body]
+  (let [{:keys [instance code]} body]
+    (cond
+      (not instance)
+      (p/resolved (error-response 400 "Missing required field: instance"))
+
+      (not code)
+      (p/resolved (error-response 400 "Missing required field: code"))
+
+      :else
+      (-> (p/let [result (repl/eval-lua instance code)]
+            (ok result))
+          (p/catch (fn [err]
+                     (error-response 500 (ex-message err))))))))
+
+(defn handle-repl-history
+  "GET /api/repl/history — return REPL command history."
+  [_req]
+  (p/resolved
+   (ok {:count   (count (repl/get-history))
+        :entries (repl/get-history)})))
+
+(defn handle-repl-inspect
+  "POST /api/repl/inspect — structured game state inspection."
+  [body]
+  (let [{:keys [instance category filter]} body]
+    (cond
+      (not instance)
+      (p/resolved (error-response 400 "Missing required field: instance"))
+
+      (not category)
+      (p/resolved (error-response 400 "Missing required field: category"))
+
+      :else
+      (-> (p/let [result (repl/inspect instance category filter)]
+            (ok result))
+          (p/catch (fn [err]
+                     (error-response 500 (ex-message err))))))))
+
 (def route-table
   "Map of [method path] -> handler function."
-  {[:get "/api/status"]       handle-status
-   [:get "/api/capabilities"] handle-capabilities
-   [:get "/api/diagnostics"]  handle-diagnostics
-   [:post "/api/validate"]    handle-validate
-   [:post "/api/check"]       handle-check
-   [:post "/api/lint"]        handle-lint
-   [:post "/api/parse"]       handle-parse
-   [:post "/api/rcon/exec"]   handle-rcon-exec})
+  {[:get "/api/status"]        handle-status
+   [:get "/api/capabilities"]  handle-capabilities
+   [:get "/api/diagnostics"]   handle-diagnostics
+   [:post "/api/validate"]     handle-validate
+   [:post "/api/check"]        handle-check
+   [:post "/api/lint"]         handle-lint
+   [:post "/api/parse"]        handle-parse
+   [:post "/api/rcon/exec"]    handle-rcon-exec
+   [:post "/api/repl/eval"]    handle-repl-eval
+   [:get "/api/repl/history"]  handle-repl-history
+   [:post "/api/repl/inspect"] handle-repl-inspect})

@@ -10,6 +10,7 @@
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.diagnostic :as diag]
             [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.repl :as repl]
             [factorio-mod-tool.scaffold :as scaffold]
             [factorio-mod-tool.pipeline.dag :as dag]
             [factorio-mod-tool.pipeline.runner :as runner]
@@ -133,6 +134,89 @@
       (p/catch (fn [err]
                  (print-err "Error: " (ex-message err))
                  (js/process.exit 1)))))
+
+;; ---------------------------------------------------------------------------
+;; REPL command — interactive Lua REPL via RCON
+;; ---------------------------------------------------------------------------
+
+(defn- print-repl-result [{:keys [output parsed]}]
+  (case (:type parsed)
+    :empty   nil
+    :error   (println (str "  ERROR: " (:message parsed)))
+    :ok      (println (str "  " (:value parsed)))
+    (when (not-empty output) (println (str "  " output)))))
+
+(defn cmd-repl
+  "Start an interactive REPL session connected to a running Factorio instance."
+  [opts]
+  (let [instance "__repl__"
+        readline (js/require "readline")]
+    (-> (p/let [cfg (-> (config/read-config)
+                        (p/catch (fn [_] {:config {}})))
+                cfg-rcon (get-in (:config cfg) [:rcon] {})
+                rcon-opts (cond-> cfg-rcon
+                            (:host opts) (assoc :host (:host opts))
+                            (:port opts) (assoc :port (:port opts))
+                            (:password opts) (assoc :password (:password opts)))
+                _ (rcon/connect instance rcon-opts)]
+          (println "Factorio REPL connected.")
+          (println "  Type Lua code to evaluate. Special commands:")
+          (println "  .entities  — list entity prototypes")
+          (println "  .recipes   — list recipes")
+          (println "  .forces    — list forces")
+          (println "  .surface   — inspect current surface")
+          (println "  .history   — show command history")
+          (println "  .clear     — clear history")
+          (println "  .exit      — quit REPL")
+          (println)
+          (let [rl (.createInterface readline
+                     #js {:input  js/process.stdin
+                          :output js/process.stdout
+                          :prompt "factorio> "})]
+            (.prompt rl)
+            (.on rl "line"
+              (fn [line]
+                (let [trimmed (str/trim line)]
+                  (cond
+                    (or (= trimmed ".exit") (= trimmed ".quit"))
+                    (do (println "Goodbye.")
+                        (-> (rcon/disconnect instance)
+                            (p/then (fn [_] (js/process.exit 0)))))
+
+                    (= trimmed ".history")
+                    (do (doseq [{:keys [input output]} (repl/get-history)]
+                          (println (str "  > " input))
+                          (when (not-empty output)
+                            (println (str "    " output))))
+                        (.prompt rl))
+
+                    (= trimmed ".clear")
+                    (do (repl/clear-history!)
+                        (println "  History cleared.")
+                        (.prompt rl))
+
+                    (str/blank? trimmed)
+                    (.prompt rl)
+
+                    :else
+                    (-> (p/let [result (repl/eval-lua instance trimmed)]
+                          (print-repl-result result)
+                          (.prompt rl))
+                        (p/catch (fn [err]
+                                   (println (str "  ERROR: " (ex-message err)))
+                                   (.prompt rl))))))))
+            (.on rl "close"
+              (fn []
+                (println)
+                (-> (rcon/disconnect instance)
+                    (p/then (fn [_] (js/process.exit 0))))))))
+        (p/catch (fn [err]
+                   (let [msg (or (not-empty (ex-message err))
+                                 (.-code err)
+                                 "unknown error")]
+                     (print-err "RCON connection failed: " msg)
+                     (print-err "Ensure Factorio is running with RCON enabled.")
+                     (js/process.exit 1)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Check command — offline (luaparse) and live (RCON) Lua validation
@@ -316,6 +400,7 @@ Commands:
   parse -               Parse Lua from stdin
   check <files...>      Check Lua files for syntax errors (offline)
   check --live <files>  Check Lua files via RCON against running Factorio
+  repl                  Interactive Lua REPL via RCON to running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
   serve                 Start HTTP + WebSocket server
   ui                    Open browser GUI (starts server if needed)
@@ -352,6 +437,8 @@ Examples:
   fmod lint
   fmod pack
   fmod all
+  fmod repl
+  fmod repl --host localhost --port 27015 --password secret
   fmod new-project my-awesome-mod")
 
 (defn- print-usage []
@@ -453,6 +540,21 @@ Examples:
                 (print-err "Usage: fmod new-project <name>")
                 (js/process.exit 1))
             (cmd-new-project (first rest)))
+
+          "repl"
+          (let [parse-repl-args
+                (fn [args]
+                  (loop [args args opts {}]
+                    (if (empty? args)
+                      opts
+                      (let [a (first args)
+                            more (subvec (vec args) 1)]
+                        (cond
+                          (= a "--host")     (recur (subvec (vec more) 1) (assoc opts :host (first more)))
+                          (= a "--port")     (recur (subvec (vec more) 1) (assoc opts :port (js/parseInt (first more))))
+                          (= a "--password") (recur (subvec (vec more) 1) (assoc opts :password (first more)))
+                          :else              (recur more opts))))))]
+            (cmd-repl (parse-repl-args rest)))
 
           "doctor"
           (cmd-doctor)
