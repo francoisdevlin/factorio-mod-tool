@@ -1,5 +1,6 @@
 (ns factorio-mod-tool.util.fs
   "Async Node.js filesystem wrappers using promises."
+  (:refer-clojure :exclude [exists?])
   (:require [promesa.core :as p]))
 
 (def ^:private fs (js/require "fs"))
