@@ -9,6 +9,7 @@
             [factorio-mod-tool.util.lua :as lua]
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.analysis.validate :as validate]
+            [factorio-mod-tool.analysis.lint :as lint]
             [factorio-mod-tool.rcon.client :as rcon]))
 
 ;; ---------------------------------------------------------------------------
@@ -49,6 +50,26 @@
                       (p/catch (fn [err]
                                  {:content [{:type "text"
                                              :text (str "Parse error: " (ex-message err))}]
+                                  :isError true}))))})
+
+(def lint-mod-tool
+  {:name        "lint-mod"
+   :description "Run linting rules on a Factorio mod. Checks for deprecated API usage, missing locale strings, naming conventions, and data-lifecycle violations. Returns diagnostics with severity, scope, and category."
+   :inputSchema {:type       "object"
+                 :properties {:path {:type        "string"
+                                     :description "Path to the mod directory"}}
+                 :required   [:path]}
+   :tool-fn     (fn [_context arguments]
+                  (-> (p/let [mod-data    (mod/read-mod-dir (:path arguments))
+                              diagnostics (lint/lint-mod mod-data)]
+                        {:content [{:type "text"
+                                    :text (pr-str {:diagnostics diagnostics
+                                                   :count       (count diagnostics)
+                                                   :has-warnings? (boolean (seq (filter #(= :warning (:severity %)) diagnostics)))})}]
+                         :isError false})
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "Lint error: " (ex-message err))}]
                                   :isError true}))))})
 
 (def rcon-exec-tool
@@ -102,6 +123,7 @@
                      :version "0.1.0"}
        :tools       [validate-mod-tool
                      parse-lua-tool
+                     lint-mod-tool
                      rcon-exec-tool
                      rcon-inspect-tool]})))
 
