@@ -11,7 +11,7 @@
 ;; HTTP route metadata — maps command names to REST endpoints
 ;; ---------------------------------------------------------------------------
 
-(def ^:private route-specs
+(def route-specs
   "Maps each catalog command to its HTTP method and path."
   [;; Queries (GET)
    {:command "status"       :method :get  :path "/api/status"}

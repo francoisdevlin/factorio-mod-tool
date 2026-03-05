@@ -65,11 +65,38 @@
     [:p description]]])
 
 ;; ---------------------------------------------------------------------------
+;; Shared utilities
+;; ---------------------------------------------------------------------------
+
+(defn- relative-time
+  "Returns a human-readable relative time string for an ISO timestamp."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))
+          diff (- now then)
+          secs (Math/floor (/ diff 1000))
+          mins (Math/floor (/ secs 60))
+          hrs  (Math/floor (/ mins 60))]
+      (cond
+        (< secs 5)  "just now"
+        (< secs 60) (str secs "s ago")
+        (< mins 60) (str mins "m ago")
+        :else       (str hrs "h " (mod mins 60) "m ago")))))
+
+;; ---------------------------------------------------------------------------
 ;; File tree
 ;; ---------------------------------------------------------------------------
 
-(defn- tree-node [{:keys [name path type children expanded?]} depth]
-  (let [indent (* depth 16)]
+(defn- node-name
+  "Derive display name from a path (last segment)."
+  [path]
+  (let [parts (.split (str path) "/")]
+    (aget parts (dec (.-length parts)))))
+
+(defn- tree-node [{:keys [path type children expanded? mtime]} depth]
+  (let [indent (* depth 16)
+        display-name (node-name path)]
     [:<>
      [:div.tree-item
       {:class (cond-> ""
@@ -81,7 +108,9 @@
                      (dispatch/dispatch! [:toggle-tree-node path])
                      (dispatch/dispatch! [:select-file path])))}
       [:span.tree-icon (if (= type :dir) (if expanded? "\u25BE" "\u25B8") "\u25CB")]
-      name]
+      [:span.tree-name display-name]
+      (when mtime
+        [:span.tree-mtime (relative-time mtime)])]
      (when (and (= type :dir) expanded? children)
        (for [child children]
          ^{:key (:path child)}
@@ -229,22 +258,6 @@ end)")
 ;; ---------------------------------------------------------------------------
 ;; Connection dashboard — hero/secondary layout
 ;; ---------------------------------------------------------------------------
-
-(defn- relative-time
-  "Returns a human-readable relative time string for an ISO timestamp."
-  [iso-str]
-  (when iso-str
-    (let [then (.getTime (js/Date. iso-str))
-          now  (.getTime (js/Date.))
-          diff (- now then)
-          secs (Math/floor (/ diff 1000))
-          mins (Math/floor (/ secs 60))
-          hrs  (Math/floor (/ mins 60))]
-      (cond
-        (< secs 5)  "just now"
-        (< secs 60) (str secs "s ago")
-        (< mins 60) (str mins "m ago")
-        :else       (str hrs "h " (mod mins 60) "m ago")))))
 
 (defn- uptime-str
   "Returns a human-readable uptime from an ISO start time."
