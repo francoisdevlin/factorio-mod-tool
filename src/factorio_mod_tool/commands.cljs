@@ -15,6 +15,7 @@
             [factorio-mod-tool.bundle.pack :as pack]
             [factorio-mod-tool.repl :as repl]
             [factorio-mod-tool.scanner :as scanner]
+            [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.util.fs :as fs]))
 
 (defn- command
@@ -378,6 +379,34 @@
       (swap! state/app-state assoc-in [:project :file-tree] tree)
       (p/resolved {:updated true
                    :entry-count (count tree)})))
+
+   (command
+    "reload-config"
+    "Reload .fmod.json configuration from disk. Triggered automatically when the scanner detects the config file has changed. Updates project config in state and reconnects RCON if settings changed."
+    {:type       "object"
+     :properties {:path {:type        "string"
+                         :description "Path to the project directory"}}
+     :required   ["path"]}
+    (fn [{:keys [path]}]
+      (let [old-config (get-in @state/app-state [:project :config])]
+        (-> (p/let [{:keys [config config-path]} (config/read-config path)]
+              (swap! state/app-state
+                     (fn [s]
+                       (-> s
+                           (assoc-in [:project :config] config)
+                           (assoc-in [:project :config-path] config-path))))
+              (let [old-rcon (:rcon old-config)
+                    new-rcon (:rcon config)
+                    rcon-changed? (or (not= (:host old-rcon) (:host new-rcon))
+                                      (not= (:port old-rcon) (:port new-rcon)))]
+                {:reloaded    true
+                 :config-path config-path
+                 :rcon-changed rcon-changed?}))
+            (p/catch (fn [err]
+                       (js/process.stderr.write
+                        (str "Config reload failed: " (ex-message err) "\n"))
+                       {:reloaded false
+                        :error    (ex-message err)}))))))
 
    (command
     "list-files"
