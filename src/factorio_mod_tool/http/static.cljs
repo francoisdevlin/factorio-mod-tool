@@ -28,18 +28,24 @@
         ext (last (.split file-path "."))]
     (.access fs full-path (.-constants.F_OK fs)
       (fn [err]
-        (let [serve-path (if err
-                           (.join path-mod (static-root) "index.html")
-                           full-path)
-              serve-ext (if err "html" ext)
-              content-type (get mime-types serve-ext "application/octet-stream")]
-          (.readFile fs serve-path
-            (fn [read-err data]
-              (if read-err
-                (do
-                  (.writeHead res 404 #js {"Content-Type" "text/plain"})
-                  (.end res "Not found"))
-                (do
-                  (.writeHead res 200 #js {"Content-Type" content-type
-                                           "Access-Control-Allow-Origin" "*"})
-                  (.end res data))))))))))
+        (if (and err (contains? mime-types ext))
+          ;; Known asset type (.js, .css, etc.) missing — 404 instead of index.html
+          (do
+            (.writeHead res 404 #js {"Content-Type" "text/plain"})
+            (.end res "Not found"))
+          ;; File exists, or unknown extension falls back to index.html for SPA routing
+          (let [serve-path (if err
+                             (.join path-mod (static-root) "index.html")
+                             full-path)
+                serve-ext (if err "html" ext)
+                content-type (get mime-types serve-ext "application/octet-stream")]
+            (.readFile fs serve-path
+              (fn [read-err data]
+                (if read-err
+                  (do
+                    (.writeHead res 404 #js {"Content-Type" "text/plain"})
+                    (.end res "Not found"))
+                  (do
+                    (.writeHead res 200 #js {"Content-Type" content-type
+                                             "Access-Control-Allow-Origin" "*"})
+                    (.end res data)))))))))))
