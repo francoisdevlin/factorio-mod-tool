@@ -85,7 +85,7 @@
 ;; ---------------------------------------------------------------------------
 
 (def usage-text
-  "Usage: fmt <command> [args]
+  "Usage: fmod <command> [args]
 
 Commands:
   validate <mod-path>   Validate a Factorio mod directory
@@ -97,15 +97,15 @@ Options:
   --help, -h            Show this help message
 
 Examples:
-  node out/cli.js validate ./my-mod
-  node out/cli.js parse data.lua
-  cat control.lua | node out/cli.js parse -")
+  fmod validate ./my-mod
+  fmod parse data.lua
+  cat control.lua | fmod parse -")
 
 (defn- print-usage []
   (println usage-text))
 
-(defn main [& args]
-  (let [args (vec args)]
+(defn main [& _]
+  (let [args (vec (drop 2 (.-argv js/process)))]
     (cond
       (or (empty? args)
           (some #{"--help" "-h"} args))

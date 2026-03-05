@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "bin": {
-    "fmt": "out/cli.js"
+    "fmod": "out/cli.js"
   },
   "scripts": {
     "build": "npx shadow-cljs compile server cli",
@@ -14,7 +14,7 @@
     "watch:cli": "npx shadow-cljs watch cli",
     "watch:test": "npx shadow-cljs watch test",
     "start": "node out/server.js",
-    "fmt": "node out/cli.js",
+    "fmod": "node out/cli.js",
     "repl": "npx shadow-cljs node-repl"
   },
   "dependencies": {
