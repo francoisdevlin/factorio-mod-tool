@@ -8,7 +8,8 @@
             [factorio-mod-tool.state :as state]
             [factorio-mod-tool.util.lua :as lua]
             [factorio-mod-tool.util.mod :as mod]
-            [factorio-mod-tool.analysis.validate :as validate]))
+            [factorio-mod-tool.analysis.validate :as validate]
+            [factorio-mod-tool.rcon.client :as rcon]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool definitions
@@ -48,6 +49,46 @@
                                              :text (str "Parse error: " (ex-message err))}]
                                   :isError true}))))})
 
+(def rcon-exec-tool
+  {:name        "rcon-exec"
+   :description "Execute a command on a connected Factorio instance via RCON."
+   :inputSchema {:type       "object"
+                 :properties {:instance {:type        "string"
+                                         :description "Name of the RCON connection"}
+                              :command  {:type        "string"
+                                         :description "Command to execute"}}
+                 :required   [:instance :command]}
+   :tool-fn     (fn [context arguments]
+                  (-> (p/let [response (rcon/exec (:instance arguments)
+                                                  (:command arguments))]
+                        {:content [{:type "text"
+                                    :text response}]
+                         :isError false})
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "RCON error: " (ex-message err))}]
+                                  :isError true}))))})
+
+(def rcon-inspect-tool
+  {:name        "rcon-inspect"
+   :description "Query game state from a connected Factorio instance via RCON."
+   :inputSchema {:type       "object"
+                 :properties {:instance {:type        "string"
+                                         :description "Name of the RCON connection"}
+                              :query    {:type        "string"
+                                         :description "Lua expression to evaluate (e.g. \"game.player.position\")"}}
+                 :required   [:instance :query]}
+   :tool-fn     (fn [context arguments]
+                  (-> (p/let [result (rcon/inspect (:instance arguments)
+                                                   (:query arguments))]
+                        {:content [{:type "text"
+                                    :text (pr-str result)}]
+                         :isError false})
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "RCON error: " (ex-message err))}]
+                                  :isError true}))))})
+
 ;; ---------------------------------------------------------------------------
 ;; Session & context
 ;; ---------------------------------------------------------------------------
@@ -58,7 +99,9 @@
       {:server-info {:name    "factorio-mod-tool"
                      :version "0.1.0"}
        :tools       [validate-mod-tool
-                     parse-lua-tool]})))
+                     parse-lua-tool
+                     rcon-exec-tool
+                     rcon-inspect-tool]})))
 
 (def context
   {:session      session
