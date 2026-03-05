@@ -165,7 +165,7 @@
                                    :host           (:host v)
                                    :port           (:port v)
                                    :last-query-at  (:last-query-at v)})
-                                @state/rcon-connections)})))
+                                (get-in @state/app-state [:connection :instances]))})))
 
    (command
     "capabilities"
@@ -189,7 +189,7 @@
        {:mods (into {}
                     (map (fn [[path data]]
                            [path {:diagnostics (:diagnostics data)}]))
-                    @state/mod-state)})))
+                    (get-in @state/app-state [:project :mods]))})))
 
    (command
     "ping"
@@ -205,7 +205,7 @@
     {:type "object"
      :properties {}}
     (fn [_params]
-      (p/resolved @state/preferences)))
+      (p/resolved (state/get-preferences))))
 
    (command
     "set-preference"
@@ -217,11 +217,8 @@
                           :description "Preference value (e.g. \"dark\", \"light\", \"factorio\")"}}
      :required   ["key" "value"]}
     (fn [{:keys [key value]}]
-      (swap! state/preferences assoc (keyword key) value)
-      (state/broadcast! {:type "preference-change"
-                          :key  key
-                          :value value})
-      (p/resolved @state/preferences)))
+      (state/set-preference! (keyword key) value)
+      (p/resolved (state/get-preferences))))
 
    (command
     "rcon-heartbeat"

@@ -106,7 +106,7 @@
   (let [timer (js/setInterval
                (fn [] (heartbeat instance-name))
                interval-ms)]
-    (swap! state/rcon-connections assoc-in [instance-name :heartbeat-timer] timer)
+    (swap! state/app-state assoc-in [:connection :instances instance-name :heartbeat-timer] timer)
     ;; Send initial heartbeat immediately
     (heartbeat instance-name)
     {:instance instance-name
@@ -118,7 +118,7 @@
   [instance-name]
   (when-let [timer (:heartbeat-timer (state/get-rcon instance-name))]
     (js/clearInterval timer)
-    (swap! state/rcon-connections update instance-name dissoc :heartbeat-timer))
+    (swap! state/app-state update-in [:connection :instances instance-name] dissoc :heartbeat-timer))
   {:instance instance-name :heartbeat :stopped})
 
 (defn connection-health
@@ -131,7 +131,7 @@
                     :heartbeat-failures (or (:heartbeat-failures v) 0)
                     :host               (:host v)
                     :port               (:port v)}]))
-         @state/rcon-connections))
+         (get-in @state/app-state [:connection :instances])))
   ([instance-name]
    (when-let [v (state/get-rcon instance-name)]
      {:health             (or (:health v) :unknown)

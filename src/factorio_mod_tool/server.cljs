@@ -8,6 +8,7 @@
             [promesa.core :as p]
             [factorio-mod-tool.commands :as commands]
             [factorio-mod-tool.queue :as queue]
+            [factorio-mod-tool.state :as state]
             [factorio-mod-tool.http.server :as http-server]
             [factorio-mod-tool.util.config :as config]))
 
@@ -92,8 +93,9 @@
   ;; server is running.
   (js/process.stdin.on "end" (fn [] nil))
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
-  ;; Start the HTTP+WS server alongside the MCP stdio transport
-  (-> (p/let [config-result (-> (config/read-config)
+  ;; Initialize state (load preferences from disk) and start HTTP+WS server
+  (-> (p/let [_ (state/init!)
+              config-result (-> (config/read-config)
                                 (p/catch (fn [_] {:config {} :config-path nil})))
               port (parse-port-arg (:config config-result))]
         (http-server/start-server! port))
