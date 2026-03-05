@@ -334,7 +334,35 @@
     {:type "object"
      :properties {}}
     (fn [_params]
-      (p/resolved {:categories (rcon-queries/list-categories)})))])
+      (p/resolved {:categories (rcon-queries/list-categories)})))
+
+   (command
+    "open-project"
+    "Open a project directory as the active context. Reads .fmod.json config, populates the file tree, and sets the working mod path for all tools."
+    {:type       "object"
+     :properties {:path {:type        "string"
+                         :description "Path to the project directory"}}
+     :required   ["path"]}
+    (fn [{:keys [path]}]
+      (p/let [result (state/open-project! path)]
+        {:path      (:path result)
+         :mod-path  (:mod-path result)
+         :has-config (some? (:config result))
+         :file-count (count (get-in result [:mod-data :files]))
+         :rcon      (get-in result [:config :rcon])})))
+
+   (command
+    "get-project"
+    "Get the current project state including path, config, and file tree."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (p/resolved
+       (let [project (:project @state/app-state)]
+         {:current-path (:current-path project)
+          :config       (:config project)
+          :has-project  (some? (:current-path project))
+          :file-tree    (:file-tree project)}))))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."

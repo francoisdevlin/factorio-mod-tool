@@ -115,6 +115,14 @@
   (when (= key "theme")
     (dispatch! [:set-theme value])))
 
+(defmethod handle-event :server/project [[_ data]]
+  (swap! db/app-db
+         (fn [db]
+           (-> db
+               (assoc-in [:project :current-path] (:current-path data))
+               (assoc-in [:project :config] (:config data))
+               (assoc :file-tree (or (:file-tree data) []))))))
+
 ;; ---------------------------------------------------------------------------
 ;; Server commands (dispatch over WebSocket, results come back via broadcast)
 ;; ---------------------------------------------------------------------------
@@ -149,6 +157,23 @@
   (-> (ws/send-command! "POST" "/api/preferences" {:key key :value value})
       (.catch (fn [_]))))
 
+(defmethod handle-event :cmd/open-project [[_ path]]
+  (-> (ws/send-command! "POST" "/api/project/open" {:path path})
+      (.then (fn [res]
+               (dispatch! [:server/project {:current-path (:path res)
+                                            :config       nil}])
+               ;; Re-fetch full project state to get file tree
+               (dispatch! [:cmd/fetch-project])))
+      (.catch (fn [err]
+                (js/console.error "Failed to open project:" (.-message err))))))
+
+(defmethod handle-event :cmd/fetch-project [_]
+  (-> (ws/send-command! "GET" "/api/project")
+      (.then (fn [res]
+               (when (:has-project res)
+                 (dispatch! [:server/project res]))))
+      (.catch (fn [_]))))
+
 (defmethod handle-event :cmd/fetch-initial-data [_]
   ;; Server status
   (-> (ws/send-command! "GET" "/api/status")
@@ -176,4 +201,6 @@
       (.then (fn [res]
                (when-let [conns (:connections res)]
                  (swap! db/app-db assoc-in [:server :rcon-health] conns))))
-      (.catch (fn [_]))))
+      (.catch (fn [_])))
+  ;; Project state
+  (dispatch! [:cmd/fetch-project]))

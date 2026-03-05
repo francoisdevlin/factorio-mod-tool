@@ -36,9 +36,17 @@
 ;; Current project path
 (s/def :project/current-path (s/nilable string?))
 
-;; Project state: map of path -> mod-entry, plus current-path
+;; Project config from .fmod.json
+(s/def :project/config (s/nilable map?))
+(s/def :project/config-path (s/nilable string?))
+
+;; File tree nodes for GUI
+(s/def :project/file-tree (s/nilable vector?))
+
+;; Project state: map of path -> mod-entry, plus current-path and config
 (s/def ::project
-  (s/keys :opt-un [:project/current-path :project/mods]))
+  (s/keys :opt-un [:project/current-path :project/mods
+                   :project/config :project/config-path :project/file-tree]))
 
 (s/def :project/mods (s/map-of string? :project/mod-entry))
 

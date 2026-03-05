@@ -83,6 +83,14 @@
         (get-in config [:http :port])
         3000)))
 
+(defn- parse-project-arg
+  "Parse --project flag from argv. Returns the project path or nil."
+  []
+  (let [args (vec (drop 2 (.-argv js/process)))
+        proj-idx (.indexOf args "--project")]
+    (when (and (>= proj-idx 0) (< (inc proj-idx) (count args)))
+      (nth args (inc proj-idx)))))
+
 (defn main [& _args]
   (js/process.stdin.setEncoding "utf8")
   (when (.-setEncoding js/process.stdout)
@@ -103,9 +111,28 @@
   (-> (p/let [_ (state/init!)
               config-result (-> (config/read-config)
                                 (p/catch (fn [_] {:config {} :config-path nil})))
-              port (parse-port-arg (:config config-result))]
+              port (parse-port-arg (:config config-result))
+              project-path (parse-project-arg)]
         (http-server/start-server! port)
         ;; Start global RCON heartbeat scheduler
-        (rcon/start-heartbeat-scheduler!))
+        (rcon/start-heartbeat-scheduler!)
+        ;; Open project if --project was specified
+        (when project-path
+          (-> (p/let [result (state/open-project! project-path)]
+                (js/process.stderr.write
+                 (str "Opened project: " (:path result) "\n"))
+                ;; Auto-connect RCON if config has connection info
+                (when-let [rcon-config (get-in result [:config :rcon])]
+                  (when (and (:host rcon-config) (:port rcon-config))
+                    (-> (rcon/connect "__project__" rcon-config)
+                        (p/then (fn [_]
+                                  (js/process.stderr.write "Auto-connected RCON from project config\n")
+                                  (rcon/start-heartbeat! "__project__")))
+                        (p/catch (fn [err]
+                                   (js/process.stderr.write
+                                    (str "RCON auto-connect failed: " (ex-message err) "\n"))))))))
+              (p/catch (fn [err]
+                         (js/process.stderr.write
+                          (str "Warning: failed to open project: " (ex-message err) "\n")))))))
       (p/catch (fn [err]
                  (js/process.stderr.write (str "Warning: HTTP server failed to start: " (ex-message err) "\n"))))))

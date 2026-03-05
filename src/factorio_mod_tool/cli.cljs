@@ -402,7 +402,7 @@ Commands:
   check --live <files>  Check Lua files via RCON against running Factorio
   repl                  Interactive Lua REPL via RCON to running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
-  serve                 Start HTTP + WebSocket server
+  serve [path]          Start HTTP + WebSocket server (optionally open a project)
   ui                    Open browser GUI (starts server if needed)
   doctor                Show detected capabilities and install guidance
 
@@ -425,6 +425,7 @@ Check options:
   --host <host>         RCON host (default: localhost)
   --port <port>         RCON port (default: 27015) / HTTP server port (default: 3000)
   --password <pass>     RCON password
+  --project <path>      Open a project directory on startup
 
 General options:
   --help, -h            Show this help message
@@ -439,7 +440,9 @@ Examples:
   fmod all
   fmod repl
   fmod repl --host localhost --port 27015 --password secret
-  fmod new-project my-awesome-mod")
+  fmod new-project my-awesome-mod
+  fmod serve ./my-mod
+  fmod serve --project ./my-mod --port 8080")
 
 (defn- print-usage []
   (println usage-text))
@@ -560,7 +563,20 @@ Examples:
           (cmd-doctor)
 
           "serve"
-          (http-server/main)
+          (let [;; Parse --project flag or positional arg
+                project-idx (.indexOf (to-array rest) "--project")
+                project-path (cond
+                               (and (>= project-idx 0) (< (inc project-idx) (count rest)))
+                               (nth rest (inc project-idx))
+                               ;; Support: fmod serve /path/to/mod (positional)
+                               (and (seq rest) (not (str/starts-with? (first rest) "-")))
+                               (first rest))]
+            ;; Set --project in argv for server.cljs to pick up
+            (when project-path
+              (let [args (.-argv js/process)]
+                (.push args "--project")
+                (.push args project-path)))
+            (http-server/main))
 
           "ui"
           (let [child-process (js/require "child_process")

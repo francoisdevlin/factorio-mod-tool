@@ -46,3 +46,7 @@
 
 ;; RCON connections: vector of {:instance, :host, :port, :last-query-at}
 (def rcon-connections (r/cursor db/app-db [:server :rcon-connections]))
+
+;; Project state
+(def project-path (r/cursor db/app-db [:project :current-path]))
+(def project-config (r/cursor db/app-db [:project :config]))
