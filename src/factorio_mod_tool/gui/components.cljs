@@ -2,7 +2,7 @@
   "UI components for the Factorio Mod Tool GUI."
   (:require [reagent.core :as r]
             [factorio-mod-tool.gui.state :as state]
-            [factorio-mod-tool.gui.ws :as ws]
+            [factorio-mod-tool.gui.dispatch :as dispatch]
             ["highlight.js/lib/core" :as hljs]
             ["highlight.js/lib/languages/lua" :as lua-lang]))
 
@@ -23,20 +23,7 @@
       ^{:key target}
       [:button.pipeline-btn
        {:class (when (= target (:target @state/pipeline-status)) "running")
-        :on-click (fn []
-                    (reset! state/pipeline-status {:target target :status :running})
-                    (-> (ws/send-command! "POST" (str "/api/validate")
-                                          {:path "."})
-                        (.then (fn [res]
-                                 (when-let [diags (:diagnostics res)]
-                                   (reset! state/diagnostics diags))
-                                 (reset! state/pipeline-status {:target target :status :ok})
-                                 (swap! state/pipeline-results assoc target
-                                        {:status :ok :timestamp (.toISOString (js/Date.))})))
-                        (.catch (fn [_err]
-                                  (reset! state/pipeline-status {:target target :status :error})
-                                  (swap! state/pipeline-results assoc target
-                                         {:status :error :timestamp (.toISOString (js/Date.))})))))}
+        :on-click #(dispatch/dispatch! [:cmd/validate {:target target :path "."}])}
        target])]
    [:div.status-indicators
     [status-indicator "Server" @state/connection-status]
@@ -64,7 +51,7 @@
      ^{:key id}
      [:button.nav-item
       {:class (when (= id @state/active-section) "active")
-       :on-click #(reset! state/active-section id)}
+       :on-click #(dispatch/dispatch! [:navigate id])}
       label])])
 
 ;; ---------------------------------------------------------------------------
@@ -91,25 +78,8 @@
        :style {:padding-left (str (+ 12 indent) "px")}
        :on-click (fn []
                    (if (= type :dir)
-                     ;; Toggle expansion
-                     (swap! state/file-tree
-                            (fn [tree]
-                              (letfn [(toggle [nodes]
-                                        (mapv (fn [n]
-                                                (if (= (:path n) path)
-                                                  (update n :expanded? not)
-                                                  (if (:children n)
-                                                    (update n :children toggle)
-                                                    n)))
-                                              nodes))]
-                                (toggle tree))))
-                     ;; Select file
-                     (do
-                       (reset! state/selected-file path)
-                       (reset! state/file-content nil)
-                       (-> (ws/send-command! "POST" "/api/parse"
-                                              {:source ""})
-                           (.catch (fn [_]))))))}
+                     (dispatch/dispatch! [:toggle-tree-node path])
+                     (dispatch/dispatch! [:select-file path])))}
       [:span.tree-icon (if (= type :dir) (if expanded? "\u25BE" "\u25B8") "\u25CB")]
       name]
      (when (and (= type :dir) expanded? children)
@@ -160,7 +130,7 @@
          [:div.diagnostic-item
           {:on-click (fn []
                        (when (:file d)
-                         (reset! state/selected-file (:file d))))}
+                         (dispatch/dispatch! [:select-file (:file d)])))}
           [:span.diagnostic-severity
            {:class (name (or (:severity d) :info))}
            (case (:severity d)
@@ -246,11 +216,8 @@ end)")
           [:div.theme-option
            {:class    (when (= id current) "selected")
             :on-click (fn []
-                        (reset! state/current-theme id)
-                        (apply-theme! id)
-                        (-> (ws/send-command! "POST" "/api/preferences"
-                                              {:key "theme" :value id})
-                            (.catch (fn [_]))))}
+                        (dispatch/dispatch! [:set-theme id])
+                        (dispatch/dispatch! [:cmd/save-preference "theme" id]))}
            [:div.theme-option-header
             [:span.theme-radio (if (= id current) "\u25C9" "\u25CB")]
             [:span.theme-option-label label]]
@@ -503,14 +470,4 @@ end)")
               (let [cmd @input-val]
                 (when (not-empty cmd)
                   (reset! input-val "")
-                  (swap! state/console-lines conj {:type :command :text (str "> " cmd)})
-                  (-> (ws/send-command! "POST" "/api/rcon/exec"
-                                         {:instance "__gui__" :command cmd})
-                      (.then (fn [res]
-                               (swap! state/console-lines conj
-                                      {:type :response
-                                       :text (or (:response res) "(no response)")})))
-                      (.catch (fn [err]
-                                (swap! state/console-lines conj
-                                       {:type :error
-                                        :text (str "Error: " (.-message err))}))))))))}]]])))
+                  (dispatch/dispatch! [:cmd/rcon-exec {:command cmd}])))))}]]])))

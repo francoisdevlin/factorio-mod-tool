@@ -1,45 +1,48 @@
 (ns factorio-mod-tool.gui.state
-  "Application state for the GUI."
-  (:require [reagent.core :as r]))
+  "Application state for the GUI.
+   All state lives in db/app-db. These cursors provide backward-compatible
+   access for components that haven't migrated to dispatch! yet."
+  (:require [reagent.core :as r]
+            [factorio-mod-tool.gui.db :as db]))
 
 ;; Connection status: :disconnected, :connected, :error
-(defonce connection-status (r/atom :disconnected))
+(def connection-status (r/cursor db/app-db [:connection-status]))
 
 ;; Server info from /api/status
-(defonce server-status (r/atom nil))
+(def server-status (r/cursor db/app-db [:server :status]))
 
 ;; Capabilities from /api/capabilities
-(defonce capabilities (r/atom nil))
+(def capabilities (r/cursor db/app-db [:server :capabilities]))
 
 ;; File tree: vector of {:name, :path, :type (:file/:dir), :children, :expanded?}
-(defonce file-tree (r/atom []))
+(def file-tree (r/cursor db/app-db [:file-tree]))
 
 ;; Currently selected file path
-(defonce selected-file (r/atom nil))
+(def selected-file (r/cursor db/app-db [:navigation :selected-file]))
 
 ;; Content of the currently viewed file
-(defonce file-content (r/atom nil))
+(def file-content (r/cursor db/app-db [:navigation :file-content]))
 
 ;; Diagnostics: vector of diagnostic maps
-(defonce diagnostics (r/atom []))
+(def diagnostics (r/cursor db/app-db [:server :diagnostics]))
 
 ;; RCON console lines: vector of {:type (:command/:response/:error), :text}
-(defonce console-lines (r/atom []))
+(def console-lines (r/cursor db/app-db [:console-lines]))
 
 ;; Pipeline status: nil or {:target, :status (:running/:ok/:error)}
-(defonce pipeline-status (r/atom nil))
+(def pipeline-status (r/cursor db/app-db [:server :pipeline-status]))
 
 ;; Pipeline results history: map of target -> {:status, :timestamp}
-(defonce pipeline-results (r/atom {}))
+(def pipeline-results (r/cursor db/app-db [:server :pipeline-results]))
 
 ;; Active navigation section
-(defonce active-section (r/atom :projects))
+(def active-section (r/cursor db/app-db [:navigation :section]))
 
 ;; Current theme: "factorio" (default), "light", or "dark"
-(defonce current-theme (r/atom "factorio"))
+(def current-theme (r/cursor db/app-db [:current-theme]))
 
 ;; RCON connection health: map of instance-name -> {:health, :last-heartbeat-at, :failures}
-(defonce rcon-health (r/atom {}))
+(def rcon-health (r/cursor db/app-db [:server :rcon-health]))
 
 ;; RCON connections: vector of {:instance, :host, :port, :last-query-at}
-(defonce rcon-connections (r/atom []))
+(def rcon-connections (r/cursor db/app-db [:server :rcon-connections]))

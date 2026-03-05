@@ -2,6 +2,7 @@
   "Main entry point for the browser GUI."
   (:require [reagent.dom :as rdom]
             [factorio-mod-tool.gui.state :as state]
+            [factorio-mod-tool.gui.dispatch :as dispatch]
             [factorio-mod-tool.gui.ws :as ws]
             [factorio-mod-tool.gui.components :as c]))
 
@@ -13,78 +14,29 @@
    [c/section-content]
    [c/console-panel]])
 
-(defn- fetch-initial-data []
-  ;; Fetch server status (includes RCON connections)
-  (-> (ws/send-command! "GET" "/api/status")
-      (.then (fn [res]
-               (reset! state/server-status res)
-               (when-let [conns (:rcon-connections res)]
-                 (reset! state/rcon-connections (vec conns)))))
-      (.catch (fn [_])))
-  ;; Fetch capabilities
-  (-> (ws/send-command! "GET" "/api/capabilities")
-      (.then (fn [res]
-               (reset! state/capabilities (:capabilities res))))
-      (.catch (fn [_])))
-  ;; Fetch diagnostics
-  (-> (ws/send-command! "GET" "/api/diagnostics")
-      (.then (fn [res]
-               (when-let [mods (:mods res)]
-                 (let [all-diags (mapcat (fn [[_path data]]
-                                          (:diagnostics data))
-                                        mods)]
-                   (reset! state/diagnostics (vec all-diags))))))
-      (.catch (fn [_])))
-  ;; Fetch preferences (theme)
-  (-> (ws/send-command! "GET" "/api/preferences")
-      (.then (fn [res]
-               (when-let [theme (:theme res)]
-                 (reset! state/current-theme theme)
-                 (.setAttribute (.-documentElement js/document) "data-theme" theme))))
-      (.catch (fn [_])))
-  ;; Fetch RCON connection health
-  (-> (ws/send-command! "GET" "/api/rcon/health")
-      (.then (fn [res]
-               (when-let [conns (:connections res)]
-                 (reset! state/rcon-health conns))))
-      (.catch (fn [_]))))
-
 (defn- setup-ws-handlers []
   (reset! ws/on-status-change
           (fn [status]
-            (reset! state/connection-status status)
+            (dispatch/dispatch! [:set-connection-status status])
             (when (= status :connected)
-              (fetch-initial-data))))
+              (dispatch/dispatch! [:cmd/fetch-initial-data]))))
   (reset! ws/on-message
           (fn [msg]
             (case (:type msg)
               "diagnostics"
-              (reset! state/diagnostics (vec (:diagnostics msg)))
+              (dispatch/dispatch! [:server/diagnostics (:diagnostics msg)])
 
               "pipeline-status"
-              (reset! state/pipeline-status {:target (:target msg)
-                                             :status (keyword (:status msg))})
+              (dispatch/dispatch! [:server/pipeline-status msg])
 
               "preference-change"
-              (when (= (:key msg) "theme")
-                (reset! state/current-theme (:value msg))
-                (.setAttribute (.-documentElement js/document) "data-theme" (:value msg)))
+              (dispatch/dispatch! [:server/preference-change (:key msg) (:value msg)])
 
               "rcon-health"
-              (swap! state/rcon-health assoc (:instance msg)
-                     {:health            (:health msg)
-                      :last-heartbeat-at (:last-heartbeat-at msg)
-                      :failures          (or (:failures msg) 0)})
+              (dispatch/dispatch! [:server/rcon-health msg])
 
               "rcon-state"
-              (let [{:keys [instance last-query-at]} msg]
-                (swap! state/rcon-connections
-                       (fn [conns]
-                         (mapv (fn [c]
-                                 (if (= (:instance c) instance)
-                                   (assoc c :last-query-at last-query-at)
-                                   c))
-                               conns))))
+              (dispatch/dispatch! [:server/rcon-state msg])
 
               nil))))
 
