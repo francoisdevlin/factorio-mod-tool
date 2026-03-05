@@ -1,207 +1,43 @@
 (ns factorio-mod-tool.server
-  "MCP server entry point. Creates the server, registers tools/resources,
-   and starts the stdio transport."
+  "MCP server entry point. Thin adapter that wires the command catalog
+   through the central queue. Each MCP tool delegates to queue/submit!
+   rather than calling domain functions directly."
   (:require [clojure.string :as str]
             [mcp-toolkit.server :as server]
             [mcp-toolkit.json-rpc :as json-rpc]
             [promesa.core :as p]
-            [factorio-mod-tool.state :as state]
-            [factorio-mod-tool.util.lua :as lua]
-            [factorio-mod-tool.util.mod :as mod]
-            [factorio-mod-tool.analysis.validate :as validate]
-            [factorio-mod-tool.analysis.lint :as lint]
-            [factorio-mod-tool.rcon.client :as rcon]
-            [factorio-mod-tool.bundle.pack :as pack]
-            [factorio-mod-tool.repl :as repl]
+            [factorio-mod-tool.commands :as commands]
+            [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.http.server :as http-server]
             [factorio-mod-tool.util.config :as config]))
 
 ;; ---------------------------------------------------------------------------
-;; Tool definitions
+;; Catalog → MCP tool adapter
 ;; ---------------------------------------------------------------------------
 
-(def validate-mod-tool
-  {:name        "validate-mod"
-   :description "Validate a Factorio mod's structure, load order, info.json, and dependencies. Returns diagnostics with severity, scope, and category."
-   :inputSchema {:type       "object"
-                 :properties {:path {:type        "string"
-                                     :description "Path to the mod directory"}}
-                 :required   [:path]}
+(defn- catalog-entry->mcp-tool
+  "Convert a command catalog entry into an MCP tool definition.
+   The tool-fn delegates to queue/submit! so all commands flow through
+   the central queue regardless of transport."
+  [{:keys [name description input-schema]}]
+  {:name        name
+   :description description
+   :inputSchema input-schema
    :tool-fn     (fn [_context arguments]
-                  (-> (p/let [mod-data (mod/read-mod-dir (:path arguments))
-                              diagnostics (validate/validate-mod mod-data)]
-                        {:content [{:type "text"
-                                    :text (pr-str {:valid? (not (some #(= :error (:severity %)) diagnostics))
-                                                   :diagnostics diagnostics})}]
-                         :isError false})
+                  (-> (queue/submit! name arguments)
+                      (p/then (fn [result]
+                                {:content [{:type "text"
+                                            :text (pr-str result)}]
+                                 :isError false}))
                       (p/catch (fn [err]
                                  {:content [{:type "text"
-                                             :text (str "Validation error: " (ex-message err))}]
+                                             :text (str (str/capitalize (first (str/split name #"-")))
+                                                        " error: " (ex-message err))}]
                                   :isError true}))))})
 
-(def parse-lua-tool
-  {:name        "parse-lua"
-   :description "Parse a Lua source file and return its AST."
-   :inputSchema {:type       "object"
-                 :properties {:source {:type        "string"
-                                       :description "Lua source code to parse"}}
-                 :required   [:source]}
-   :tool-fn     (fn [_context arguments]
-                  (-> (p/let [ast (lua/parse (:source arguments))]
-                        {:content [{:type "text"
-                                    :text (pr-str ast)}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "Parse error: " (ex-message err))}]
-                                  :isError true}))))})
-
-(def lint-mod-tool
-  {:name        "lint-mod"
-   :description "Run linting rules on a Factorio mod. Checks for deprecated API usage, missing locale strings, naming conventions, and data-lifecycle violations. Returns diagnostics with severity, scope, and category."
-   :inputSchema {:type       "object"
-                 :properties {:path {:type        "string"
-                                     :description "Path to the mod directory"}}
-                 :required   [:path]}
-   :tool-fn     (fn [_context arguments]
-                  (-> (p/let [mod-data    (mod/read-mod-dir (:path arguments))
-                              diagnostics (lint/lint-mod mod-data)]
-                        {:content [{:type "text"
-                                    :text (pr-str {:diagnostics diagnostics
-                                                   :count       (count diagnostics)
-                                                   :has-warnings? (boolean (seq (filter #(= :warning (:severity %)) diagnostics)))})}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "Lint error: " (ex-message err))}]
-                                  :isError true}))))})
-
-(def rcon-exec-tool
-  {:name        "rcon-exec"
-   :description "Execute a command on a connected Factorio instance via RCON."
-   :inputSchema {:type       "object"
-                 :properties {:instance {:type        "string"
-                                         :description "Name of the RCON connection"}
-                              :command  {:type        "string"
-                                         :description "Command to execute"}}
-                 :required   [:instance :command]}
-   :tool-fn     (fn [context arguments]
-                  (-> (p/let [response (rcon/exec (:instance arguments)
-                                                  (:command arguments))]
-                        {:content [{:type "text"
-                                    :text response}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "RCON error: " (ex-message err))}]
-                                  :isError true}))))})
-
-(def rcon-inspect-tool
-  {:name        "rcon-inspect"
-   :description "Query game state from a connected Factorio instance via RCON."
-   :inputSchema {:type       "object"
-                 :properties {:instance {:type        "string"
-                                         :description "Name of the RCON connection"}
-                              :query    {:type        "string"
-                                         :description "Lua expression to evaluate (e.g. \"game.player.position\")"}}
-                 :required   [:instance :query]}
-   :tool-fn     (fn [context arguments]
-                  (-> (p/let [result (rcon/inspect (:instance arguments)
-                                                   (:query arguments))]
-                        {:content [{:type "text"
-                                    :text (pr-str result)}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "RCON error: " (ex-message err))}]
-                                  :isError true}))))})
-
-(def pack-mod-tool
-  {:name        "pack-mod"
-   :description "Bundle a Factorio mod directory into a distributable zip file. Creates modname_version.zip with the top-level directory structure Factorio expects."
-   :inputSchema {:type       "object"
-                 :properties {:path       {:type        "string"
-                                           :description "Path to the mod directory"}
-                              :output-dir {:type        "string"
-                                           :description "Directory to write the zip file to (defaults to current directory)"}
-                              :exclude    {:type        "array"
-                                           :items       {:type "string"}
-                                           :description "Glob patterns of files to exclude from the zip"}}
-                 :required   [:path]}
-   :tool-fn     (fn [_context arguments]
-                  (let [mod-path   (:path arguments)
-                        output-dir (or (:output-dir arguments) ".")
-                        exclude    (vec (or (:exclude arguments) []))]
-                    (-> (pack/pack-mod mod-path output-dir {:exclude exclude})
-                        (p/then (fn [result]
-                                  {:content [{:type "text"
-                                              :text (pr-str result)}]
-                                   :isError false}))
-                        (p/catch (fn [err]
-                                   {:content [{:type "text"
-                                               :text (str "Pack error: " (ex-message err))}]
-                                    :isError true})))))})
-
-(def repl-eval-tool
-  {:name        "repl-eval"
-   :description "Evaluate Lua code against a running Factorio instance via REPL. Supports dot-commands: .entities, .recipes, .forces, .surface for structured inspection."
-   :inputSchema {:type       "object"
-                 :properties {:instance {:type        "string"
-                                         :description "Name of the RCON connection"}
-                              :code     {:type        "string"
-                                         :description "Lua code to evaluate (or dot-command like .entities)"}}
-                 :required   [:instance :code]}
-   :tool-fn     (fn [_context arguments]
-                  (-> (p/let [result (repl/eval-lua (:instance arguments)
-                                                    (:code arguments))]
-                        {:content [{:type "text"
-                                    :text (pr-str result)}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "REPL error: " (ex-message err))}]
-                                  :isError true}))))})
-
-(def repl-history-tool
-  {:name        "repl-history"
-   :description "View REPL command history. Returns previous commands and their results."
-   :inputSchema {:type       "object"
-                 :properties {:limit {:type        "number"
-                                      :description "Number of recent entries to return (default: all)"}}}
-   :tool-fn     (fn [_context arguments]
-                  (let [history (if-let [n (:limit arguments)]
-                                 (repl/get-history n)
-                                 (repl/get-history))]
-                    (p/resolved
-                     {:content [{:type "text"
-                                 :text (pr-str {:count (count history)
-                                                :entries history})}]
-                      :isError false})))})
-
-(def repl-inspect-tool
-  {:name        "repl-inspect"
-   :description "Structured game state inspection. Query entities, recipes, forces, or surface state from a running Factorio instance."
-   :inputSchema {:type       "object"
-                 :properties {:instance {:type        "string"
-                                         :description "Name of the RCON connection"}
-                              :category {:type        "string"
-                                         :description "What to inspect: entities, recipes, forces, or surface"
-                                         :enum        ["entities" "recipes" "forces" "surface"]}
-                              :filter   {:type        "string"
-                                         :description "Optional substring filter for results"}}
-                 :required   [:instance :category]}
-   :tool-fn     (fn [_context arguments]
-                  (-> (p/let [result (repl/inspect (:instance arguments)
-                                                   (:category arguments)
-                                                   (:filter arguments))]
-                        {:content [{:type "text"
-                                    :text (pr-str result)}]
-                         :isError false})
-                      (p/catch (fn [err]
-                                 {:content [{:type "text"
-                                             :text (str "Inspect error: " (ex-message err))}]
-                                  :isError true}))))})
-
+(def ^:private mcp-tools
+  "MCP tool definitions generated from the command catalog."
+  (mapv catalog-entry->mcp-tool commands/catalog))
 
 ;; ---------------------------------------------------------------------------
 ;; Session & context
@@ -212,15 +48,7 @@
     (server/create-session
       {:server-info {:name    "factorio-mod-tool"
                      :version "0.1.0"}
-       :tools       [validate-mod-tool
-                     parse-lua-tool
-                     lint-mod-tool
-                     pack-mod-tool
-                     rcon-exec-tool
-                     rcon-inspect-tool
-                     repl-eval-tool
-                     repl-history-tool
-                     repl-inspect-tool]})))
+       :tools       mcp-tools})))
 
 (def context
   {:session      session
