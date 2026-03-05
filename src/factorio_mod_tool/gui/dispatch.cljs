@@ -233,6 +233,20 @@
                             (str "Error loading file: " (.-message err))
                             nil])))))
 
+(defmethod handle-event :cmd/check-lua-live [[_ path]]
+  (swap! db/app-db assoc :check-lua-live {:file path :status :checking :result nil})
+  (-> (ws/send-command! "POST" "/api/check-lua-live" {:path path})
+      (.then (fn [res]
+               (swap! db/app-db assoc :check-lua-live
+                      {:file   (:file res)
+                       :status (keyword (or (:status res) "error"))
+                       :result (:result res)})))
+      (.catch (fn [err]
+                (swap! db/app-db assoc :check-lua-live
+                       {:file   path
+                        :status :error
+                        :result (.-message err)})))))
+
 (defmethod handle-event :cmd/fetch-initial-data [_]
   ;; Server status
   (-> (ws/send-command! "GET" "/api/status")

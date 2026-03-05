@@ -411,7 +411,41 @@
                      :size    (.-size st)})
                   (p/catch (fn [err]
                              (throw (ex-info (str "Failed to read file: " (ex-message err))
-                                             {:path path})))))))))))])
+                                             {:path path})))))))))))
+
+   (command
+    "check-lua-live"
+    "Send a Lua file from the project to a running Factorio instance via RCON and check if it loads cleanly. Returns OK or the error message from Factorio's Lua runtime."
+    {:type       "object"
+     :properties {:path     {:type        "string"
+                             :description "Relative file path within the project (must be a .lua file)"}
+                  :instance {:type        "string"
+                             :description "RCON instance name (default: __project__)"}}
+     :required   ["path"]}
+    (fn [{:keys [path instance]}]
+      (let [project-path (state/current-project-path)
+            inst         (or instance "__project__")]
+        (if-not project-path
+          (p/rejected (ex-info "No project open" {}))
+          (let [abs-path   (fs/resolve-path project-path path)
+                normalized (fs/resolve-path abs-path)]
+            (if-not (.startsWith normalized project-path)
+              (p/rejected (ex-info "Path outside project directory" {:path path}))
+              (-> (p/let [src      (fs/read-file abs-path)
+                          lua-cmd  (str "/silent-command "
+                                        "local ok, err = load("
+                                        (pr-str src)
+                                        ") if not ok then rcon.print('ERROR: ' .. err) "
+                                        "else rcon.print('OK') end")
+                          response (rcon/exec inst lua-cmd)
+                          trimmed  (.trim (str response))]
+                    {:file   path
+                     :status (if (.startsWith trimmed "OK") :ok :error)
+                     :result trimmed})
+                  (p/catch (fn [err]
+                             {:file    path
+                              :status  :error
+                              :result  (ex-message err)})))))))))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."
