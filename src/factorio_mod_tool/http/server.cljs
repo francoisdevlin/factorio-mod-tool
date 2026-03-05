@@ -102,7 +102,8 @@
 
 (defn- handle-request [req res]
   (let [method (str/lower-case (.-method req))
-        url (.-url req)]
+        raw-url (.-url req)
+        url (first (.split raw-url "?"))]
     (cond
       ;; CORS preflight
       (= method "options")

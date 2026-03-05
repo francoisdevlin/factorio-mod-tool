@@ -255,9 +255,14 @@
 
 (defn main [& _args]
   (js/process.stdin.setEncoding "utf8")
-  (js/process.stdout.setEncoding "utf8")
+  (when (.-setEncoding js/process.stdout)
+    (.setEncoding js/process.stdout "utf8"))
   (js/process.stdin.on "data" handle-stdin-data)
-  (js/process.stdin.on "end" (fn [] (js/process.exit 0)))
+  ;; When stdin closes (MCP client disconnects), only exit if the HTTP server
+  ;; isn't keeping the process alive. Without process.exit, the event loop
+  ;; naturally exits when no listeners remain, but stays alive if the HTTP
+  ;; server is running.
+  (js/process.stdin.on "end" (fn [] nil))
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
   ;; Start the HTTP+WS server alongside the MCP stdio transport
   (-> (p/let [config-result (-> (config/read-config)
