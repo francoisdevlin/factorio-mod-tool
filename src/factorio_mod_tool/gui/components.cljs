@@ -203,6 +203,7 @@ end)")
                      (when-let [el @code-ref]
                        (set! (.-className el) "language-lua")
                        (set! (.-textContent el) sample-lua)
+                       (.removeAttribute el "data-highlighted")
                        (.highlightElement hljs el)))]
     (r/create-class
      {:component-did-mount  (fn [_] (highlight!))
