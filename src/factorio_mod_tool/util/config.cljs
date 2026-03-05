@@ -1,7 +1,8 @@
 (ns factorio-mod-tool.util.config
   "Read and validate .fmod.json project configuration.
    Walks up from a starting directory to find the nearest .fmod.json."
-  (:require [promesa.core :as p]
+  (:require [clojure.string :as str]
+            [promesa.core :as p]
             [factorio-mod-tool.util.fs :as fs]))
 
 (def ^:private config-filename ".fmod.json")
@@ -76,6 +77,6 @@
              raw (-> content js/JSON.parse (js->clj :keywordize-keys true))
              errors (validate-config raw)]
        (when (seq errors)
-         (throw (js/Error. (str "Invalid " config-filename ": " (first errors)))))
+         (throw (js/Error. (str "Invalid " config-filename ":\n  - " (str/join "\n  - " errors)))))
        (let [config (-> raw apply-defaults inject-rcon-password)]
          {:config config :config-path config-path})))))
