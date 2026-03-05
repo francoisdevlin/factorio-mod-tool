@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Factorio Mod Tool</title>
+  <style>
+    :root {
+      --bg-primary: #1e1e2e;
+      --bg-secondary: #181825;
+      --bg-surface: #313244;
+      --bg-hover: #45475a;
+      --text-primary: #cdd6f4;
+      --text-secondary: #a6adc8;
+      --text-muted: #6c7086;
+      --accent: #89b4fa;
+      --accent-hover: #74c7ec;
+      --error: #f38ba8;
+      --warning: #fab387;
+      --success: #a6e3a1;
+      --info: #89b4fa;
+      --border: #45475a;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body, #app {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      color: var(--text-primary);
+      background: var(--bg-primary);
+    }
+
+    /* Layout */
+    .app-layout {
+      display: grid;
+      grid-template-rows: 40px 1fr 200px;
+      grid-template-columns: 250px 1fr 300px;
+      height: 100%;
+    }
+
+    .top-bar {
+      grid-column: 1 / -1;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      gap: 16px;
+    }
+
+    .top-bar h1 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .status-indicators {
+      display: flex;
+      gap: 12px;
+      margin-left: auto;
+      font-size: 12px;
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    .status-dot.connected { background: var(--success); }
+    .status-dot.disconnected { background: var(--error); }
+    .status-dot.unknown { background: var(--text-muted); }
+
+    /* Panels */
+    .file-tree {
+      background: var(--bg-secondary);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 8px 0;
+    }
+
+    .center-panel {
+      background: var(--bg-primary);
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diagnostics-panel {
+      background: var(--bg-secondary);
+      border-left: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .bottom-panel {
+      grid-column: 1 / -1;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Panel headers */
+    .panel-header {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .panel-header .count {
+      background: var(--bg-surface);
+      padding: 1px 6px;
+      border-radius: 8px;
+      font-size: 10px;
+    }
+
+    /* File tree */
+    .tree-item {
+      padding: 3px 12px 3px 0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .tree-item:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .tree-item.selected { background: var(--bg-surface); color: var(--accent); }
+    .tree-item.directory { font-weight: 500; }
+
+    .tree-icon {
+      width: 16px;
+      text-align: center;
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    /* Diagnostics */
+    .diagnostic-item {
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    .diagnostic-item:hover { background: var(--bg-hover); }
+
+    .diagnostic-severity {
+      display: inline-block;
+      width: 14px;
+      text-align: center;
+      margin-right: 6px;
+    }
+
+    .diagnostic-severity.error { color: var(--error); }
+    .diagnostic-severity.warning { color: var(--warning); }
+    .diagnostic-severity.info { color: var(--info); }
+
+    .diagnostic-file {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    /* File viewer */
+    .file-content {
+      flex: 1;
+      padding: 16px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      overflow: auto;
+    }
+
+    .file-tab-bar {
+      display: flex;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .file-tab {
+      padding: 6px 16px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-right: 1px solid var(--border);
+    }
+
+    .file-tab:hover { color: var(--text-primary); }
+    .file-tab.active { background: var(--bg-primary); color: var(--accent); }
+
+    /* RCON console */
+    .console-output {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .console-line { padding: 1px 0; }
+    .console-line.command { color: var(--accent); }
+    .console-line.response { color: var(--text-primary); }
+    .console-line.error { color: var(--error); }
+
+    .console-input-row {
+      display: flex;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .console-prompt {
+      padding: 6px 8px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      flex-shrink: 0;
+    }
+
+    .console-input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-primary);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      padding: 6px 0;
+      outline: none;
+    }
+
+    /* Pipeline toolbar */
+    .pipeline-toolbar {
+      display: flex;
+      gap: 6px;
+      padding: 6px 12px;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .pipeline-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      color: var(--text-secondary);
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font-sans);
+    }
+
+    .pipeline-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .pipeline-btn.running { border-color: var(--accent); color: var(--accent); }
+
+    /* Empty state */
+    .empty-state {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    /* Capability badges */
+    .capability-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-surface);
+    }
+
+    .capability-badge.available { color: var(--success); }
+    .capability-badge.missing { color: var(--text-muted); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="empty-state">Loading...</div>
+  </div>
+  <script src="/js/main.js"></script>
+</body>
+</html>

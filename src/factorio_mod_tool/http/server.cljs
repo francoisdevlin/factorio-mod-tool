@@ -4,7 +4,8 @@
   (:require [clojure.string :as str]
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
-            [factorio-mod-tool.util.config :as config]))
+            [factorio-mod-tool.util.config :as config]
+            [factorio-mod-tool.http.static :as static]))
 
 (def ^:private http (js/require "http"))
 (def ^:private WebSocketServer (.-WebSocketServer (js/require "ws")))
@@ -107,7 +108,7 @@
       (= method "options")
       (handle-cors-preflight req res)
 
-      ;; Route lookup
+      ;; API routes
       :else
       (let [handler (get routes/route-table [(keyword method) url])]
         (if handler
@@ -117,7 +118,8 @@
                 (send-json-response res (:status result) (:body result)))
               (p/catch (fn [err]
                          (send-json-response res 500 {:error (ex-message err)}))))
-          (send-json-response res 404 {:error (str "Not found: " method " " url)}))))))
+          ;; Try serving static files for the GUI
+          (static/serve-static req res))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Server startup

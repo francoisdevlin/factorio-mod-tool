@@ -6,10 +6,12 @@
     "fmod": "out/cli.js"
   },
   "scripts": {
-    "build": "npx shadow-cljs compile server cli http-server",
+    "build": "npx shadow-cljs compile server cli http-server gui",
     "build:cli": "npx shadow-cljs compile cli",
     "build:server": "npx shadow-cljs compile server",
     "build:http": "npx shadow-cljs compile http-server",
+    "build:gui": "npx shadow-cljs compile gui",
+    "watch:gui": "npx shadow-cljs watch gui",
     "build:test": "npx shadow-cljs compile test",
     "watch": "npx shadow-cljs watch server",
     "watch:cli": "npx shadow-cljs watch cli",
@@ -23,7 +25,9 @@
     "luaparse": "^0.3.1",
     "rcon-client": "^4.2.4",
     "archiver": "^7.0.1",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "shadow-cljs": "^3.1.7"

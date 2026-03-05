@@ -318,6 +318,7 @@ Commands:
   check --live <files>  Check Lua files via RCON against running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
   serve                 Start HTTP + WebSocket server
+  ui                    Open browser GUI (starts server if needed)
   doctor                Show detected capabilities and install guidance
 
 Pipeline targets (run through DAG with dependencies):
@@ -458,6 +459,22 @@ Examples:
 
           "serve"
           (http-server/main)
+
+          "ui"
+          (let [child-process (js/require "child_process")
+                port-args (filter #(str/starts-with? % "--port") rest)
+                port (if (seq port-args)
+                       (js/parseInt (second rest))
+                       3000)
+                url (str "http://localhost:" port)]
+            (-> (http-server/main)
+                (p/then (fn []
+                          (println (str "Opening browser at " url))
+                          (let [cmd (case (.-platform js/process)
+                                     "darwin" "open"
+                                     "win32" "start"
+                                     "xdg-open")]
+                            (.exec child-process (str cmd " " url)))))))
 
           ;; Check if it's a known DAG target name
           (if (contains? dag-target-names cmd)

@@ -12,6 +12,13 @@
                        :main      factorio-mod-tool.http.server/main
                        :output-to "out/http-server.js"}
 
+          :gui {:target     :browser
+                :modules    {:main {:init-fn factorio-mod-tool.gui.app/init}}
+                :output-dir "resources/public/js"
+                :asset-path "/js"
+                :devtools   {:http-root "resources/public"
+                             :http-port 8280}}
+
           :test {:target    :node-test
                  :output-to "out/test.js"
                  :autorun   true}}}
