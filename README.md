@@ -35,8 +35,10 @@ fmod all
 | `fmod check --live <files>` | Check Lua files against a running Factorio instance via RCON |
 | `fmod repl` | Interactive Lua REPL connected to a running Factorio instance |
 | `fmod doctor` | Detect available capabilities and show install guidance |
-| `fmod serve` | Start the HTTP + WebSocket server |
+| `fmod serve [path]` | Start the HTTP + WebSocket server (optionally open a project) |
 | `fmod ui` | Start the server and open the browser GUI |
+| `fmod serve --project <path>` | Start server with a mod project directory |
+| `fmod ui --project <path>` | Start server, open project, and launch browser |
 
 ### Pipeline Targets
 
@@ -82,7 +84,7 @@ Targets with unmet capability requirements are automatically skipped (e.g., `che
 
 ## Configuration: `.fmod.json`
 
-The project configuration file. `fmod` walks up from the current directory to find it.
+The project configuration file. `fmod` walks up from the current directory to find it. When using `--project <path>`, the config is read from the specified project root. It stores RCON connection settings, pipeline customizations, directory structure, and packaging options.
 
 ```json
 {
@@ -130,6 +132,26 @@ The project configuration file. `fmod` walks up from the current directory to fi
 
 The RCON password is **never** stored in `.fmod.json`. Set it via the `FMOD_RCON_PASSWORD` environment variable.
 
+## Opening a Project
+
+Use `--project` (or a positional path with `serve`) to open a mod project directory on startup. This reads `.fmod.json` from the project root, builds the file tree, runs auto-validation, and connects RCON if configured:
+
+```bash
+# Open a project with the GUI
+fmod ui --project /path/to/my-mod
+
+# Or with serve (positional arg also works)
+fmod serve /path/to/my-mod
+fmod serve --project /path/to/my-mod --port 8080
+```
+
+The full dev workflow:
+
+1. **Open project** — `fmod ui --project ./my-mod` starts the server, loads the mod, and opens the browser
+2. **Auto-validate** — Mod structure and `info.json` are validated on load; diagnostics appear immediately
+3. **Browse files** — The file tree shows your mod's source structure
+4. **Connect RCON** — If `.fmod.json` has `rcon` config and `FMOD_RCON_PASSWORD` is set, RCON connects automatically
+
 ## GUI: `fmod ui`
 
 `fmod ui` starts an HTTP + WebSocket server and opens a browser-based dashboard built with Reagent (React). The GUI provides:
@@ -143,9 +165,11 @@ The RCON password is **never** stored in `.fmod.json`. Set it via the `FMOD_RCON
 - **Live updates** — WebSocket pushes diagnostics and pipeline status in real time
 
 ```bash
-fmod ui                   # Start server on port 3000 and open browser
-fmod serve                # Start server only (no browser)
-fmod serve --port 8080    # Custom port
+fmod ui                           # Start server on port 3000 and open browser
+fmod ui --project ./my-mod        # Open a project and launch browser
+fmod serve                        # Start server only (no browser)
+fmod serve ./my-mod               # Start server with a project (no browser)
+fmod serve --port 8080            # Custom port
 ```
 
 <!-- Screenshot placeholder: add a screenshot of the GUI here -->
