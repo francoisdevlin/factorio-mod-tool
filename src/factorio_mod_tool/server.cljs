@@ -16,15 +16,17 @@
 
 (def validate-mod-tool
   {:name        "validate-mod"
-   :description "Validate a Factorio mod's info.json and directory structure."
+   :description "Validate a Factorio mod's structure, load order, info.json, and dependencies. Returns diagnostics with severity, scope, and category."
    :inputSchema {:type       "object"
                  :properties {:path {:type        "string"
                                      :description "Path to the mod directory"}}
                  :required   [:path]}
-   :tool-fn     (fn [context arguments]
-                  (-> (p/let [result (validate/validate-mod (:path arguments))]
+   :tool-fn     (fn [_context arguments]
+                  (-> (p/let [mod-data (mod/read-mod-dir (:path arguments))
+                              diagnostics (validate/validate-mod mod-data)]
                         {:content [{:type "text"
-                                    :text (pr-str result)}]
+                                    :text (pr-str {:valid? (not (some #(= :error (:severity %)) diagnostics))
+                                                   :diagnostics diagnostics})}]
                          :isError false})
                       (p/catch (fn [err]
                                  {:content [{:type "text"
@@ -38,7 +40,7 @@
                  :properties {:source {:type        "string"
                                        :description "Lua source code to parse"}}
                  :required   [:source]}
-   :tool-fn     (fn [context arguments]
+   :tool-fn     (fn [_context arguments]
                   (-> (p/let [ast (lua/parse (:source arguments))]
                         {:content [{:type "text"
                                     :text (pr-str ast)}]
