@@ -33,7 +33,10 @@
    {:command "rcon-health"          :method :get  :path "/api/rcon/health"}
    {:command "rcon-heartbeat"       :method :post :path "/api/rcon/heartbeat"}
    {:command "rcon-start-heartbeat" :method :post :path "/api/rcon/heartbeat/start"}
-   {:command "rcon-stop-heartbeat"  :method :post :path "/api/rcon/heartbeat/stop"}])
+   {:command "rcon-stop-heartbeat"  :method :post :path "/api/rcon/heartbeat/stop"}
+   ;; RCON query protocol
+   {:command "rcon-query"         :method :post :path "/api/rcon/query"}
+   {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers
