@@ -28,3 +28,6 @@
 
 ;; Pipeline status: nil or {:target, :status (:running/:ok/:error)}
 (defonce pipeline-status (r/atom nil))
+
+;; Active navigation section
+(defonce active-section (r/atom :projects))

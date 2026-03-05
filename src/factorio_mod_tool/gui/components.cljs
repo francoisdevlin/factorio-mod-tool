@@ -41,6 +41,37 @@
          k]))]])
 
 ;; ---------------------------------------------------------------------------
+;; Navigation bar
+;; ---------------------------------------------------------------------------
+
+(def nav-sections
+  [{:id :projects   :label "Projects"}
+   {:id :connection :label "Connection"}
+   {:id :prototypes :label "Prototypes"}
+   {:id :blueprints :label "Blueprints"}
+   {:id :tech-tree  :label "Tech Tree"}
+   {:id :settings   :label "Settings"}])
+
+(defn nav-bar []
+  [:nav.nav-bar
+   (for [{:keys [id label]} nav-sections]
+     ^{:key id}
+     [:button.nav-item
+      {:class (when (= id @state/active-section) "active")
+       :on-click #(reset! state/active-section id)}
+      label])])
+
+;; ---------------------------------------------------------------------------
+;; Placeholder panels for future sections
+;; ---------------------------------------------------------------------------
+
+(defn placeholder-panel [title description]
+  [:div.placeholder-panel
+   [:div.placeholder-content
+    [:h2 title]
+    [:p description]]])
+
+;; ---------------------------------------------------------------------------
 ;; File tree
 ;; ---------------------------------------------------------------------------
 
@@ -133,6 +164,23 @@
           (:message d)
           (when (:file d)
             [:div.diagnostic-file (:file d)])]))]))
+
+;; ---------------------------------------------------------------------------
+;; Section routing
+;; ---------------------------------------------------------------------------
+
+(defn section-content []
+  (case @state/active-section
+    :projects   [:<>
+                 [file-tree-panel]
+                 [center-panel]
+                 [diagnostics-panel]]
+    :connection [placeholder-panel "Connection" "RCON connection status dashboard"]
+    :prototypes [placeholder-panel "Prototypes" "Browse and inspect all prototypes"]
+    :blueprints [placeholder-panel "Blueprints" "Blueprint lab viewer"]
+    :tech-tree  [placeholder-panel "Tech Tree" "Technology tree viewer"]
+    :settings   [placeholder-panel "Settings" "Configuration and theme selector"]
+    [placeholder-panel "Unknown" "Section not found"]))
 
 ;; ---------------------------------------------------------------------------
 ;; Bottom panel (RCON console)
