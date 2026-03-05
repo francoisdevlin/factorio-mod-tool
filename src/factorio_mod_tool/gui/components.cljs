@@ -195,11 +195,49 @@
         [:pre.file-code-block
          [:code {:ref #(reset! code-ref %)}]])})))
 
+(defn- mime-type-for
+  "Derive MIME type from a file path for image rendering."
+  [path]
+  (when path
+    (let [dot-idx (.lastIndexOf path ".")
+          ext     (when (pos? dot-idx) (.toLowerCase (.substring path dot-idx)))]
+      (case ext
+        ".png"  "image/png"
+        ".jpg"  "image/jpeg"
+        ".jpeg" "image/jpeg"
+        ".gif"  "image/gif"
+        ".bmp"  "image/bmp"
+        ".svg"  "image/svg+xml"
+        ".ico"  "image/x-icon"
+        ".webp" "image/webp"
+        "application/octet-stream"))))
+
+(defn- image-viewer
+  "Renders a base64-encoded image."
+  []
+  (let [content @state/file-content
+        path    @state/selected-file
+        mime    (mime-type-for path)]
+    [:div.image-viewer
+     [:img {:src (str "data:" mime ";base64," content)
+            :alt path}]]))
+
+(defn- binary-placeholder
+  "Placeholder for non-image binary files."
+  []
+  (let [meta @state/file-meta]
+    [:div.binary-placeholder
+     [:div.binary-icon "\uD83D\uDCC4"]
+     [:div.binary-label "Binary file"]
+     (when (:size meta)
+       [:div.binary-size (str (.toFixed (/ (:size meta) 1024) 1) " KB")])]))
+
 (defn center-panel []
   [:div.center-panel
    (if @state/selected-file
-     (let [meta     @state/file-meta
-           loading? @state/file-loading?]
+     (let [meta      @state/file-meta
+           loading?  @state/file-loading?
+           file-type @state/file-type]
        [:<>
         [:div.file-tab-bar
          [:div.file-tab.active
@@ -208,9 +246,20 @@
             [:span.file-tab-mtime (relative-time (:mtime meta))])]]
         [:div.file-content
          (cond
-           loading?              [:div.file-loading "Loading..."]
-           @state/file-content   [highlighted-code]
-           :else                 [:div.empty-state "Select a file to view its contents."])]])
+           loading?
+           [:div.file-loading "Loading..."]
+
+           (= file-type "image")
+           [image-viewer]
+
+           (= file-type "binary")
+           [binary-placeholder]
+
+           @state/file-content
+           [highlighted-code]
+
+           :else
+           [:div.empty-state "Select a file to view its contents."])]])
      [:div.empty-state "Select a file from the tree to view"])])
 
 ;; ---------------------------------------------------------------------------

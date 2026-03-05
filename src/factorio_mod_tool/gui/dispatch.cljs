@@ -41,7 +41,8 @@
                (assoc-in [:navigation :selected-file] path)
                (assoc-in [:navigation :file-content] nil)
                (assoc-in [:navigation :file-loading?] true)
-               (assoc-in [:navigation :file-meta] nil))))
+               (assoc-in [:navigation :file-meta] nil)
+               (assoc-in [:navigation :file-type] nil))))
   (dispatch! [:cmd/read-file path]))
 
 (defmethod handle-event :set-file-content [[_ content meta]]
@@ -50,7 +51,8 @@
            (-> db
                (assoc-in [:navigation :file-content] content)
                (assoc-in [:navigation :file-loading?] false)
-               (assoc-in [:navigation :file-meta] meta)))))
+               (assoc-in [:navigation :file-meta] meta)
+               (assoc-in [:navigation :file-type] (:type meta))))))
 
 (defmethod handle-event :toggle-tree-node [[_ path]]
   (swap! db/app-db update :file-tree
@@ -227,7 +229,10 @@
       (.then (fn [res]
                (dispatch! [:set-file-content
                            (:content res)
-                           {:mtime (:mtime res) :size (:size res)}])))
+                           {:mtime    (:mtime res)
+                            :size     (:size res)
+                            :type     (:type res)
+                            :encoding (:encoding res)}])))
       (.catch (fn [err]
                 (dispatch! [:set-file-content
                             (str "Error loading file: " (.-message err))
