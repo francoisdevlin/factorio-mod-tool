@@ -6,7 +6,8 @@
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.util.fs :as fs]
             [factorio-mod-tool.analysis.validate :as validate]
-            [factorio-mod-tool.analysis.diagnostic :as diag]))
+            [factorio-mod-tool.analysis.diagnostic :as diag]
+            [factorio-mod-tool.rcon.client :as rcon]))
 
 ;; ---------------------------------------------------------------------------
 ;; Output formatting
@@ -81,6 +82,103 @@
   (js/process.exit 1))
 
 ;; ---------------------------------------------------------------------------
+;; Check command — offline (luaparse) and live (RCON) Lua validation
+;; ---------------------------------------------------------------------------
+
+(defn- find-long-bracket-level
+  "Find a long bracket level N such that `]=*=]` with N equals doesn't appear in source."
+  [source]
+  (loop [n 0]
+    (let [close-bracket (str "]" (apply str (repeat n "=")) "]")]
+      (if (str/includes? source close-bracket)
+        (recur (inc n))
+        n))))
+
+(defn- lua-long-string
+  "Wrap source in Lua long bracket string [=[...]=] with auto-detected level."
+  [source]
+  (let [n (find-long-bracket-level source)
+        eq (apply str (repeat n "="))]
+    (str "[" eq "[" source "]" eq "]")))
+
+(defn- rcon-check-command
+  "Build the RCON command to validate Lua source via Factorio's load()."
+  [source]
+  (str "/silent-command local ok, err = load("
+       (lua-long-string source)
+       ") if not ok then rcon.print(err) else rcon.print('OK') end"))
+
+(defn- check-file-offline
+  "Check a single Lua file offline using luaparse. Returns a promise of
+   {:file path :status :ok|:error :message string?}."
+  [file-path]
+  (-> (p/let [source (fs/read-file file-path)
+              _ast (lua/parse source)]
+        {:file file-path :status :ok})
+      (p/catch (fn [err]
+                 {:file file-path :status :error :message (ex-message err)}))))
+
+(defn- check-file-live
+  "Check a single Lua file via RCON using Factorio's load(). Returns a promise of
+   {:file path :status :ok|:error :message string?}."
+  [instance-name file-path]
+  (-> (p/let [source (fs/read-file file-path)
+              cmd (rcon-check-command source)
+              response (rcon/exec instance-name cmd)
+              trimmed (str/trim response)]
+        (if (= trimmed "OK")
+          {:file file-path :status :ok}
+          {:file file-path :status :error :message trimmed}))
+      (p/catch (fn [err]
+                 {:file file-path :status :error :message (ex-message err)}))))
+
+(defn- print-check-results
+  "Print check results in ✓/✗ format and exit with appropriate code."
+  [results]
+  (let [errors (filter #(= :error (:status %)) results)]
+    (doseq [{:keys [file status message]} results]
+      (if (= status :ok)
+        (println (str "  ✓ " file))
+        (println (str "  ✗ " file ": " message))))
+    (println)
+    (println (str "  " (- (count results) (count errors)) " passed, "
+                  (count errors) " failed"))
+    (js/process.exit (if (seq errors) 1 0))))
+
+(defn cmd-check
+  "Check Lua files for syntax errors. With --live, validates via RCON against
+   a running Factorio instance. Without --live, uses luaparse offline."
+  [opts files]
+  (if (:live opts)
+    ;; Live mode: connect via RCON, check each file, disconnect
+    (let [instance "__check__"
+          rcon-opts (cond-> {}
+                      (:host opts) (assoc :host (:host opts))
+                      (:port opts) (assoc :port (:port opts))
+                      (:password opts) (assoc :password (:password opts)))]
+      (-> (p/let [_ (rcon/connect instance rcon-opts)
+                  results (p/all (mapv #(check-file-live instance %) files))]
+            (rcon/disconnect instance)
+            (println "Checking (live via RCON):")
+            (println)
+            (print-check-results results))
+          (p/catch (fn [err]
+                     (let [msg (or (not-empty (ex-message err))
+                                   (.-code err)
+                                   "unknown error")]
+                       (print-err "RCON connection failed: " msg)
+                       (print-err "Ensure Factorio is running with RCON enabled.")
+                       (js/process.exit 1))))))
+    ;; Offline mode: use luaparse
+    (-> (p/let [results (p/all (mapv check-file-offline files))]
+          (println "Checking (offline via luaparse):")
+          (println)
+          (print-check-results results))
+        (p/catch (fn [err]
+                   (print-err "Error: " (ex-message err))
+                   (js/process.exit 1))))))
+
+;; ---------------------------------------------------------------------------
 ;; Usage / dispatch
 ;; ---------------------------------------------------------------------------
 
@@ -91,15 +189,24 @@ Commands:
   validate <mod-path>   Validate a Factorio mod directory
   parse <file.lua>      Parse a Lua file and print the AST
   parse -               Parse Lua from stdin
+  check <files...>      Check Lua files for syntax errors (offline)
+  check --live <files>  Check Lua files via RCON against running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
 
-Options:
+Check options:
+  --live                Validate via RCON against a running Factorio instance
+  --host <host>         RCON host (default: localhost)
+  --port <port>         RCON port (default: 27015)
+  --password <pass>     RCON password
+
+General options:
   --help, -h            Show this help message
 
 Examples:
   fmod validate ./my-mod
   fmod parse data.lua
-  cat control.lua | fmod parse -")
+  fmod check data.lua control.lua
+  fmod check --live --host localhost --port 27015 --password secret *.lua")
 
 (defn- print-usage []
   (println usage-text))
@@ -119,7 +226,7 @@ Examples:
           "validate"
           (if (empty? rest)
             (do (print-err "Error: validate requires a mod path")
-                (print-err "Usage: fmt validate <mod-path>")
+                (print-err "Usage: fmod validate <mod-path>")
                 (js/process.exit 1))
             (cmd-validate (first rest)))
 
@@ -127,7 +234,7 @@ Examples:
           (cond
             (empty? rest)
             (do (print-err "Error: parse requires a file path or '-' for stdin")
-                (print-err "Usage: fmt parse <file.lua>")
+                (print-err "Usage: fmod parse <file.lua>")
                 (js/process.exit 1))
 
             (= "-" (first rest))
@@ -136,10 +243,34 @@ Examples:
             :else
             (cmd-parse-file (first rest)))
 
+          "check"
+          (let [;; Parse flags from rest args
+                parse-check-args
+                (fn [args]
+                  (loop [args args
+                         opts {}
+                         files []]
+                    (if (empty? args)
+                      [opts files]
+                      (let [a (first args)
+                            more (subvec (vec args) 1)]
+                        (cond
+                          (= a "--live")     (recur more (assoc opts :live true) files)
+                          (= a "--host")     (recur (subvec (vec more) 1) (assoc opts :host (first more)) files)
+                          (= a "--port")     (recur (subvec (vec more) 1) (assoc opts :port (js/parseInt (first more))) files)
+                          (= a "--password") (recur (subvec (vec more) 1) (assoc opts :password (first more)) files)
+                          :else              (recur more opts (conj files a)))))))
+                [opts files] (parse-check-args rest)]
+            (if (empty? files)
+              (do (print-err "Error: check requires at least one Lua file")
+                  (print-err "Usage: fmod check [--live] <file.lua> [...]")
+                  (js/process.exit 1))
+              (cmd-check opts files)))
+
           "lint"
           (if (empty? rest)
             (do (print-err "Error: lint requires a mod path")
-                (print-err "Usage: fmt lint <mod-path>")
+                (print-err "Usage: fmod lint <mod-path>")
                 (js/process.exit 1))
             (cmd-lint (first rest)))
 
