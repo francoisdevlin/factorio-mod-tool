@@ -187,6 +187,14 @@
                     @state/mod-state)})))
 
    (command
+    "ping"
+    "System health check. Returns pong."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (p/resolved {:pong true :timestamp (.toISOString (js/Date.))})))
+
+   (command
     "check"
     "Check Lua files for syntax errors. Supports offline parsing or live validation against a running Factorio instance."
     {:type       "object"

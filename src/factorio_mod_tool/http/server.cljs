@@ -6,7 +6,8 @@
             [factorio-mod-tool.http.routes :as routes]
             [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.util.config :as config]
-            [factorio-mod-tool.http.static :as static]))
+            [factorio-mod-tool.http.static :as static]
+            [factorio-mod-tool.state :as state]))
 
 (def ^:private http (js/require "http"))
 (def ^:private WebSocketServer (.-WebSocketServer (js/require "ws")))
@@ -15,61 +16,51 @@
 ;; WebSocket management
 ;; ---------------------------------------------------------------------------
 
-(defonce ws-clients (atom #{}))
+(defn- send-ws! [^js ws msg]
+  (when (= (.-readyState ws) (.-OPEN ws))
+    (.send ws (js/JSON.stringify (clj->js msg)))))
 
-(defn broadcast!
-  "Send a message to all connected WebSocket clients."
-  [msg]
-  (let [data (js/JSON.stringify (clj->js msg))]
-    (doseq [client @ws-clients]
-      (when (= (.-readyState client) (.-OPEN client))
-        (.send client data)))))
+(defn- handle-command [^js ws msg]
+  (let [{:keys [id command params]} msg]
+    (if-not command
+      (send-ws! ws {:type "error" :id id
+                     :message "Missing required field: command"})
+      (-> (queue/submit! command (or params {}))
+          (p/then (fn [result]
+                    (send-ws! ws {:type   "response"
+                                  :id     id
+                                  :status 200
+                                  :body   result})))
+          (p/catch (fn [err]
+                     (send-ws! ws {:type    "error"
+                                    :id      id
+                                    :message (ex-message err)})))))))
+
+(defn- handle-subscribe [^js ws msg]
+  (swap! state/ws-subscribers conj ws)
+  (send-ws! ws {:type "subscribed"
+                 :id   (:id msg)}))
 
 (defn- setup-websocket [^js wss]
   (.on wss "connection"
     (fn [^js ws _req]
-      (swap! ws-clients conj ws)
+      (swap! state/ws-clients conj ws)
       (.on ws "message"
         (fn [raw]
           (let [msg (try
                       (-> raw str js/JSON.parse (js->clj :keywordize-keys true))
                       (catch :default _ nil))]
             (when msg
-              (let [{:keys [type]} msg]
-                (case type
-                  "ping"
-                  (.send ws (js/JSON.stringify #js {:type "pong"}))
-
-                  ;; Forward commands through the route table
-                  "command"
-                  (let [{:keys [method path body]} msg
-                        method-kw (keyword (str/lower-case (or method "post")))
-                        handler (get routes/route-table [method-kw path])]
-                    (if handler
-                      (-> (handler body)
-                          (p/then (fn [{:keys [status body]}]
-                                    (.send ws (js/JSON.stringify
-                                               (clj->js {:type "response"
-                                                         :id (:id msg)
-                                                         :status status
-                                                         :body body})))))
-                          (p/catch (fn [err]
-                                     (.send ws (js/JSON.stringify
-                                                (clj->js {:type "error"
-                                                          :id (:id msg)
-                                                          :message (ex-message err)}))))))
-                      (.send ws (js/JSON.stringify
-                                 (clj->js {:type "error"
-                                           :id (:id msg)
-                                           :message (str "Unknown route: " method " " path)})))))
-
-                  ;; Unknown message type
-                  (.send ws (js/JSON.stringify
-                             (clj->js {:type "error"
-                                       :message (str "Unknown message type: " type)})))))))))
+              (case (:type msg)
+                "command"   (handle-command ws msg)
+                "subscribe" (handle-subscribe ws msg)
+                ;; Unknown message type
+                (send-ws! ws {:type    "error"
+                               :message (str "Unknown message type: " (:type msg))}))))))
       (.on ws "close"
         (fn []
-          (swap! ws-clients disj ws))))))
+          (swap! state/ws-clients disj ws)
+          (swap! state/ws-subscribers disj ws))))))
 
 ;; ---------------------------------------------------------------------------
 ;; HTTP request handling
@@ -142,7 +133,6 @@
   "Start the HTTP+WS server on the given port. Returns a promise that resolves
    when the server is listening."
   [port]
-  (queue/set-broadcast! broadcast!)
   (-> (p/let [^js server (.createServer http handle-request)
               wss (WebSocketServer. #js {:server server})]
         (setup-websocket wss)

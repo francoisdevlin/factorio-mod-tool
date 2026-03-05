@@ -3,22 +3,8 @@
    transport (MCP, HTTP, WebSocket). Executes handlers from the command
    catalog, logs events, and broadcasts results to WebSocket clients."
   (:require [promesa.core :as p]
-            [factorio-mod-tool.commands :as commands]))
-
-;; ---------------------------------------------------------------------------
-;; Broadcast hook — set by the HTTP server to avoid circular dependency
-;; ---------------------------------------------------------------------------
-
-(defonce ^:private broadcast-fn (atom nil))
-
-(defn set-broadcast!
-  "Register a broadcast function. Called by the HTTP server at startup."
-  [f]
-  (reset! broadcast-fn f))
-
-(defn- broadcast! [msg]
-  (when-let [f @broadcast-fn]
-    (f msg)))
+            [factorio-mod-tool.commands :as commands]
+            [factorio-mod-tool.state :as state]))
 
 ;; ---------------------------------------------------------------------------
 ;; Event log
@@ -54,8 +40,8 @@
                    :error     (str "Unknown command: " command-name)
                    :timestamp (now)}]
         (swap! event-log conj event)
-        (broadcast! {:type  "event"
-                     :event event})
+        (state/broadcast! {:type  "event"
+                           :event event})
         (p/rejected (ex-info (str "Unknown command: " command-name)
                              {:command command-name})))
       (let [event-id  (next-event-id)
@@ -69,8 +55,8 @@
                                    :result    result
                                    :timestamp timestamp}]
                         (swap! event-log conj event)
-                        (broadcast! {:type  "event"
-                                     :event event})
+                        (state/broadcast! {:type  "event"
+                                           :event event})
                         result)))
             (p/catch (fn [err]
                        (let [event {:id        event-id
@@ -80,8 +66,8 @@
                                     :error     (ex-message err)
                                     :timestamp timestamp}]
                          (swap! event-log conj event)
-                         (broadcast! {:type  "event"
-                                      :event event})
+                         (state/broadcast! {:type  "event"
+                                            :event event})
                          (throw err)))))))))
 
 ;; ---------------------------------------------------------------------------
