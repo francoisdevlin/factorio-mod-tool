@@ -11,6 +11,7 @@
             [factorio-mod-tool.state :as state]
             [factorio-mod-tool.http.server :as http-server]
             [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.scanner :as scanner]
             [factorio-mod-tool.util.config :as config]))
 
 ;; ---------------------------------------------------------------------------
@@ -102,8 +103,8 @@
   ;; server is running.
   (js/process.stdin.on "end" (fn [] nil))
   ;; Clean up heartbeat scheduler on shutdown
-  (js/process.on "SIGINT" (fn [] (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
-  (js/process.on "SIGTERM" (fn [] (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
+  (js/process.on "SIGINT" (fn [] (scanner/stop-scanner!) (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
+  (js/process.on "SIGTERM" (fn [] (scanner/stop-scanner!) (rcon/stop-heartbeat-scheduler!) (js/process.exit 0)))
   (js/process.stderr.write "factorio-mod-tool MCP server started\n")
   ;; Inject queue/submit! into RCON client to avoid circular dependency
   (rcon/set-queue-submit! queue/submit!)
@@ -121,6 +122,7 @@
           (-> (p/let [result (state/open-project! project-path)]
                 (js/process.stderr.write
                  (str "Opened project: " (:path result) "\n"))
+                (scanner/start-scanner!)
                 ;; Auto-connect RCON if config has connection info
                 (when-let [rcon-config (get-in result [:config :rcon])]
                   (when (and (:host rcon-config) (:port rcon-config))

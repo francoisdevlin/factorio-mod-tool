@@ -13,7 +13,8 @@
             [factorio-mod-tool.rcon.client :as rcon]
             [factorio-mod-tool.rcon.queries :as rcon-queries]
             [factorio-mod-tool.bundle.pack :as pack]
-            [factorio-mod-tool.repl :as repl]))
+            [factorio-mod-tool.repl :as repl]
+            [factorio-mod-tool.scanner :as scanner]))
 
 (defn- command
   "Create a command catalog entry."
@@ -338,13 +339,14 @@
 
    (command
     "open-project"
-    "Open a project directory as the active context. Reads .fmod.json config, populates the file tree, and sets the working mod path for all tools."
+    "Open a project directory as the active context. Reads .fmod.json config, populates the file tree, starts the periodic directory scanner, and sets the working mod path for all tools."
     {:type       "object"
      :properties {:path {:type        "string"
                          :description "Path to the project directory"}}
      :required   ["path"]}
     (fn [{:keys [path]}]
       (p/let [result (state/open-project! path)]
+        (scanner/start-scanner!)
         {:path      (:path result)
          :mod-path  (:mod-path result)
          :has-config (some? (:config result))
@@ -362,7 +364,15 @@
          {:current-path (:current-path project)
           :config       (:config project)
           :has-project  (some? (:current-path project))
-          :file-tree    (:file-tree project)}))))])
+          :file-tree    (:file-tree project)}))))
+
+   (command
+    "list-files"
+    "List all files in the currently opened project directory. Returns the scanned file tree with relative paths, types, mtimes, and sizes. The tree is maintained by a periodic background scanner."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (scanner/list-files)))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."

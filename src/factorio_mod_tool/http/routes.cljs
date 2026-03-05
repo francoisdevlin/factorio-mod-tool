@@ -39,7 +39,8 @@
    {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}
    ;; Project
    {:command "open-project"      :method :post :path "/api/project/open"}
-   {:command "get-project"       :method :get  :path "/api/project"}])
+   {:command "get-project"       :method :get  :path "/api/project"}
+   {:command "list-files"        :method :get  :path "/api/project/files"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers
