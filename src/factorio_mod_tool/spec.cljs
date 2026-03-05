@@ -1,6 +1,6 @@
 (ns factorio-mod-tool.spec
   "clojure.spec definitions for the server-side app state schema.
-   Three top-level keys: :project, :connection, :preferences."
+   Four top-level keys: :project, :connection, :preferences, :telemetry."
   (:require [cljs.spec.alpha :as s]))
 
 ;; ---------------------------------------------------------------------------
@@ -95,11 +95,29 @@
                    :preferences/editor]))
 
 ;; ---------------------------------------------------------------------------
+;; :telemetry — background thread observability
+;; ---------------------------------------------------------------------------
+
+(s/def :telemetry.thread/last-run-at ::iso-timestamp)
+(s/def :telemetry.thread/run-count nat-int?)
+(s/def :telemetry.thread/avg-ms number?)
+
+(s/def :telemetry/thread-entry
+  (s/keys :req-un [:telemetry.thread/last-run-at
+                    :telemetry.thread/run-count
+                    :telemetry.thread/avg-ms]))
+
+(s/def :telemetry/threads (s/map-of keyword? :telemetry/thread-entry))
+
+(s/def ::telemetry
+  (s/keys :opt-un [:telemetry/threads]))
+
+;; ---------------------------------------------------------------------------
 ;; Top-level app-state
 ;; ---------------------------------------------------------------------------
 
 (s/def ::app-state
-  (s/keys :req-un [::project ::connection ::preferences]))
+  (s/keys :req-un [::project ::connection ::preferences ::telemetry]))
 
 ;; ---------------------------------------------------------------------------
 ;; Validation helpers

@@ -122,22 +122,25 @@
 (defn- do-scan!
   "Perform one scan cycle. Compares with previous result, submits changes
    through the command queue for unified state management and WS broadcast.
-   Also checks .fmod.json for changes and triggers config reload."
+   Also checks .fmod.json for changes and triggers config reload.
+   Records telemetry for the :scanner thread."
   []
   (when-let [project-path (state/current-project-path)]
-    (-> (p/let [entries (scan-dir project-path project-path)
-                new-fp  (scan-fingerprint entries)
-                old-fp  @previous-scan
-                _       (check-config-change! project-path)]
-          (when (not= new-fp old-fp)
-            (reset! previous-scan new-fp)
-            (let [tree (entries->nested-tree entries)]
-              (if-let [submit! @queue-submit-fn]
-                (submit! "update-file-tree" {:tree tree})
-                (swap! state/app-state assoc-in [:project :file-tree] tree)))))
-        (p/catch (fn [err]
-                   (js/process.stderr.write
-                    (str "Scanner error: " (ex-message err) "\n")))))))
+    (let [start-ms (.now js/Date)]
+      (-> (p/let [entries (scan-dir project-path project-path)
+                  new-fp  (scan-fingerprint entries)
+                  old-fp  @previous-scan
+                  _       (check-config-change! project-path)]
+            (when (not= new-fp old-fp)
+              (reset! previous-scan new-fp)
+              (let [tree (entries->nested-tree entries)]
+                (if-let [submit! @queue-submit-fn]
+                  (submit! "update-file-tree" {:tree tree})
+                  (swap! state/app-state assoc-in [:project :file-tree] tree))))
+            (state/record-thread-run! :scanner (- (.now js/Date) start-ms)))
+          (p/catch (fn [err]
+                     (js/process.stderr.write
+                      (str "Scanner error: " (ex-message err) "\n"))))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Public API

@@ -1,6 +1,6 @@
 (ns factorio-mod-tool.state
   "Centralized application state for the Factorio mod tool.
-   Single app-state atom with three top-level keys: :project, :connection, :preferences.
+   Single app-state atom with four top-level keys: :project, :connection, :preferences, :telemetry.
    State changes are validated against specs (dev mode) and broadcast to WS clients."
   (:require [promesa.core :as p]
             [factorio-mod-tool.spec :as spec]
@@ -45,7 +45,8 @@
                        :mods         {}}
          :connection  {:instances       {}
                        :active-instance nil}
-         :preferences {:theme "factorio"}}))
+         :preferences {:theme "factorio"}
+         :telemetry   {:threads {}}}))
 
 ;; ---------------------------------------------------------------------------
 ;; WebSocket state (transport-level, not part of app-state spec)
@@ -111,7 +112,10 @@
     (when (not= (:preferences old-state) (:preferences new-state))
       (broadcast! {:type "state-change" :key "preferences"
                    :data (:preferences new-state)})
-      (save-preferences! (:preferences new-state)))))
+      (save-preferences! (:preferences new-state)))
+    (when (not= (:telemetry old-state) (:telemetry new-state))
+      (broadcast! {:type "state-change" :key "telemetry"
+                   :data (:telemetry new-state)}))))
 
 ;; ---------------------------------------------------------------------------
 ;; Project accessors
@@ -187,6 +191,29 @@
   "Set a single preference key-value pair."
   [k v]
   (swap! app-state assoc-in [:preferences k] v))
+
+;; ---------------------------------------------------------------------------
+;; Telemetry accessors
+;; ---------------------------------------------------------------------------
+
+(defn record-thread-run!
+  "Record a completed run for a background thread.
+   Updates last-run-at, increments run-count, and recalculates avg-ms."
+  [thread-key elapsed-ms]
+  (swap! app-state update-in [:telemetry :threads thread-key]
+         (fn [entry]
+           (let [prev-count (or (:run-count entry) 0)
+                 prev-avg   (or (:avg-ms entry) 0)
+                 new-count  (inc prev-count)
+                 new-avg    (/ (+ (* prev-avg prev-count) elapsed-ms) new-count)]
+             {:last-run-at (.toISOString (js/Date.))
+              :run-count   new-count
+              :avg-ms      new-avg}))))
+
+(defn get-thread-telemetry
+  "Returns telemetry data for a specific thread, or all threads if no key given."
+  ([] (get-in @app-state [:telemetry :threads]))
+  ([thread-key] (get-in @app-state [:telemetry :threads thread-key])))
 
 ;; ---------------------------------------------------------------------------
 ;; Project open
