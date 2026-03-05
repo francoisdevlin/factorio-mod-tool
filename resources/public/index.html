@@ -490,6 +490,79 @@
       margin-left: 22px;
     }
 
+    /* Code preview */
+    .code-preview {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg-secondary);
+    }
+
+    .code-preview-header {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .code-preview-block {
+      margin: 0;
+      padding: 12px 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      line-height: 1.6;
+      background: var(--bg-secondary);
+    }
+
+    .code-preview-block code {
+      background: transparent;
+      font-family: inherit;
+      font-size: inherit;
+    }
+
+    /* highlight.js — Dark theme */
+    .hljs { color: #cdd6f4; background: transparent; }
+    .hljs-keyword { color: #cba6f7; }
+    .hljs-string { color: #a6e3a1; }
+    .hljs-number { color: #fab387; }
+    .hljs-comment { color: #6c7086; font-style: italic; }
+    .hljs-function .hljs-title,
+    .hljs-title.function_ { color: #89b4fa; }
+    .hljs-built_in { color: #89dceb; }
+    .hljs-literal { color: #fab387; }
+    .hljs-params { color: #cdd6f4; }
+    .hljs-variable { color: #f5e0dc; }
+
+    /* highlight.js — Light theme */
+    [data-theme="light"] .hljs { color: #1a1a1a; }
+    [data-theme="light"] .hljs-keyword { color: #7c3aed; }
+    [data-theme="light"] .hljs-string { color: #16a34a; }
+    [data-theme="light"] .hljs-number { color: #c2410c; }
+    [data-theme="light"] .hljs-comment { color: #8a8a8a; font-style: italic; }
+    [data-theme="light"] .hljs-function .hljs-title,
+    [data-theme="light"] .hljs-title.function_ { color: #2563eb; }
+    [data-theme="light"] .hljs-built_in { color: #0891b2; }
+    [data-theme="light"] .hljs-literal { color: #c2410c; }
+    [data-theme="light"] .hljs-params { color: #1a1a1a; }
+    [data-theme="light"] .hljs-variable { color: #be185d; }
+
+    /* highlight.js — Factorio theme (orange/amber accents) */
+    [data-theme="factorio"] .hljs { color: #e8dcc8; }
+    [data-theme="factorio"] .hljs-keyword { color: #f0a030; }
+    [data-theme="factorio"] .hljs-string { color: #8cb060; }
+    [data-theme="factorio"] .hljs-number { color: #e8a060; }
+    [data-theme="factorio"] .hljs-comment { color: #706850; font-style: italic; }
+    [data-theme="factorio"] .hljs-function .hljs-title,
+    [data-theme="factorio"] .hljs-title.function_ { color: #d0a050; }
+    [data-theme="factorio"] .hljs-built_in { color: #c09040; }
+    [data-theme="factorio"] .hljs-literal { color: #e8a060; }
+    [data-theme="factorio"] .hljs-params { color: #e8dcc8; }
+    [data-theme="factorio"] .hljs-variable { color: #d0b080; }
+
     /* Scrollbar */
     ::-webkit-scrollbar { width: 8px; height: 8px; }
     ::-webkit-scrollbar-track { background: transparent; }

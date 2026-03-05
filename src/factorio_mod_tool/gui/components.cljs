@@ -2,7 +2,9 @@
   "UI components for the Factorio Mod Tool GUI."
   (:require [reagent.core :as r]
             [factorio-mod-tool.gui.state :as state]
-            [factorio-mod-tool.gui.ws :as ws]))
+            [factorio-mod-tool.gui.ws :as ws]
+            ["highlight.js/lib/core" :as hljs]
+            ["highlight.js/lib/languages/lua" :as lua-lang]))
 
 ;; ---------------------------------------------------------------------------
 ;; Top bar
@@ -166,6 +168,54 @@
             [:div.diagnostic-file (:file d)])]))]))
 
 ;; ---------------------------------------------------------------------------
+;; Lua code preview (highlight.js)
+;; ---------------------------------------------------------------------------
+
+(.registerLanguage hljs "lua" lua-lang)
+
+(def sample-lua
+  "-- Factorio mod: data stage
+local util = require(\"util\")
+
+data:extend({
+  {
+    type = \"recipe\",
+    name = \"advanced-circuit\",
+    enabled = false,
+    energy_required = 6,
+    ingredients = {
+      {\"electronic-circuit\", 2},
+      {\"copper-cable\", 4}
+    },
+    result = \"advanced-circuit\"
+  }
+})
+
+-- Runtime event handler
+script.on_event(defines.events.on_player_created, function(event)
+  local player = game.players[event.player_index]
+  player.print(\"Welcome to the factory!\")
+end)")
+
+(defn code-preview []
+  (let [code-ref (atom nil)
+        highlight! (fn []
+                     (when-let [el @code-ref]
+                       (set! (.-className el) "language-lua")
+                       (set! (.-textContent el) sample-lua)
+                       (.highlightElement hljs el)))]
+    (r/create-class
+     {:component-did-mount  (fn [_] (highlight!))
+      :component-did-update (fn [_] (highlight!))
+      :reagent-render
+      (fn []
+        @state/current-theme ;; deref to re-render on theme change
+        [:div.code-preview
+         [:div.code-preview-header "Code Preview"]
+         [:pre.code-preview-block
+          [:code {:ref #(reset! code-ref %)}]]])})))
+
+;; ---------------------------------------------------------------------------
 ;; Settings panel
 ;; ---------------------------------------------------------------------------
 
@@ -199,7 +249,10 @@
            [:div.theme-option-header
             [:span.theme-radio (if (= id current) "\u25C9" "\u25CB")]
             [:span.theme-option-label label]]
-           [:p.theme-option-desc desc]])]]]]))
+           [:p.theme-option-desc desc]])]]
+      [:div.settings-group
+       [:label.settings-label "Preview"]
+       [code-preview]]]]))
 
 ;; ---------------------------------------------------------------------------
 ;; Connection dashboard
