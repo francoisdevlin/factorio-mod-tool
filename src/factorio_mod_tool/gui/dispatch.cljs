@@ -39,10 +39,31 @@
          (fn [db]
            (-> db
                (assoc-in [:navigation :selected-file] path)
-               (assoc-in [:navigation :file-content] nil)))))
+               (assoc-in [:navigation :file-content] nil)
+               (assoc-in [:navigation :file-loading?] true)
+               (assoc-in [:navigation :file-meta] nil)
+               (assoc-in [:navigation :file-type] :text)
+               (assoc-in [:navigation :file-mime-type] nil))))
+  (dispatch! [:cmd/read-file path]))
 
-(defmethod handle-event :set-file-content [[_ content]]
-  (swap! db/app-db assoc-in [:navigation :file-content] content))
+(defmethod handle-event :set-file-content [[_ content meta]]
+  (swap! db/app-db
+         (fn [db]
+           (-> db
+               (assoc-in [:navigation :file-content] content)
+               (assoc-in [:navigation :file-loading?] false)
+               (assoc-in [:navigation :file-meta] meta)))))
+
+(defmethod handle-event :set-file-data [[_ data]]
+  (swap! db/app-db
+         (fn [db]
+           (-> db
+               (assoc-in [:navigation :file-content] (:content data))
+               (assoc-in [:navigation :file-loading?] false)
+               (assoc-in [:navigation :file-type] (keyword (or (:file-type data) "text")))
+               (assoc-in [:navigation :file-mime-type] (:mime-type data))
+               (assoc-in [:navigation :file-meta] {:mtime (:mtime data)
+                                                    :size  (:size data)})))))
 
 (defmethod handle-event :toggle-tree-node [[_ path]]
   (swap! db/app-db update :file-tree
@@ -96,6 +117,15 @@
   (swap! db/app-db assoc-in [:server :pipeline-results target]
          {:status status :timestamp (.toISOString (js/Date.))}))
 
+(defmethod handle-event :server/connection-state [[_ data]]
+  (let [instances (:instances data)
+        conns (mapv (fn [[name info]]
+                      (-> info
+                          (select-keys [:host :port :last-query-at])
+                          (assoc :instance name)))
+                    instances)]
+    (swap! db/app-db assoc-in [:server :rcon-connections] conns)))
+
 (defmethod handle-event :server/rcon-health [[_ data]]
   (swap! db/app-db assoc-in [:server :rcon-health (:instance data)]
          {:health            (:health data)
@@ -115,13 +145,56 @@
   (when (= key "theme")
     (dispatch! [:set-theme value])))
 
+(defmethod handle-event :server/telemetry [[_ data]]
+  (swap! db/app-db assoc-in [:server :telemetry] data))
+
+(defn- collect-expanded-paths
+  "Walk a tree and return a set of paths that are currently expanded."
+  [tree]
+  (reduce (fn [acc {:keys [path type children expanded?]}]
+            (let [acc (if (and (= type :dir) expanded?)
+                        (conj acc path)
+                        acc)]
+              (if children
+                (into acc (collect-expanded-paths children))
+                acc)))
+          #{}
+          tree))
+
+(defn- apply-expanded-state
+  "Walk a new tree and restore expanded? flags from a set of expanded paths."
+  [tree expanded-paths]
+  (mapv (fn [node]
+          (if (:children node)
+            (-> node
+                (assoc :expanded? (contains? expanded-paths (:path node)))
+                (update :children apply-expanded-state expanded-paths))
+            node))
+        tree))
+
+(defn- normalize-tree-types
+  "Ensure :type values are keywords in tree nodes.
+   JSON serialization through WebSocket converts keywords to strings."
+  [tree]
+  (mapv (fn [node]
+          (cond-> (update node :type keyword)
+            (:children node)
+            (update :children normalize-tree-types)))
+        tree))
+
 (defmethod handle-event :server/project [[_ data]]
   (swap! db/app-db
          (fn [db]
-           (-> db
-               (assoc-in [:project :current-path] (:current-path data))
-               (assoc-in [:project :config] (:config data))
-               (assoc :file-tree (or (:file-tree data) []))))))
+           (let [old-tree (:file-tree db)
+                 new-tree (normalize-tree-types (or (:file-tree data) []))
+                 expanded-paths (collect-expanded-paths old-tree)
+                 merged-tree (if (seq expanded-paths)
+                               (apply-expanded-state new-tree expanded-paths)
+                               new-tree)]
+             (-> db
+                 (assoc-in [:project :current-path] (:current-path data))
+                 (assoc-in [:project :config] (:config data))
+                 (assoc :file-tree merged-tree))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Server commands (dispatch over WebSocket, results come back via broadcast)
@@ -174,6 +247,29 @@
                  (dispatch! [:server/project res]))))
       (.catch (fn [_]))))
 
+(defmethod handle-event :cmd/read-file [[_ path]]
+  (-> (ws/send-command! "POST" "/api/project/read-file" {:path path})
+      (.then (fn [res]
+               (dispatch! [:set-file-data res])))
+      (.catch (fn [err]
+                (dispatch! [:set-file-data
+                            {:content   (str "Error loading file: " (.-message err))
+                             :file-type "text"}])))))
+
+(defmethod handle-event :cmd/check-lua-live [[_ path]]
+  (swap! db/app-db assoc :check-lua-live {:file path :status :checking :result nil})
+  (-> (ws/send-command! "POST" "/api/check-lua-live" {:path path})
+      (.then (fn [res]
+               (swap! db/app-db assoc :check-lua-live
+                      {:file   (:file res)
+                       :status (keyword (or (:status res) "error"))
+                       :result (:result res)})))
+      (.catch (fn [err]
+                (swap! db/app-db assoc :check-lua-live
+                       {:file   path
+                        :status :error
+                        :result (.-message err)})))))
+
 (defmethod handle-event :cmd/fetch-initial-data [_]
   ;; Server status
   (-> (ws/send-command! "GET" "/api/status")
@@ -196,11 +292,21 @@
                (when-let [theme (:theme res)]
                  (dispatch! [:set-theme theme]))))
       (.catch (fn [_])))
-  ;; RCON health
+  ;; RCON health — also derive rcon-connections for the hero panel
   (-> (ws/send-command! "GET" "/api/rcon/health")
       (.then (fn [res]
                (when-let [conns (:connections res)]
-                 (swap! db/app-db assoc-in [:server :rcon-health] conns))))
+                 (swap! db/app-db assoc-in [:server :rcon-health] conns)
+                 ;; Derive connection list from health data so hero panel works
+                 ;; even if status fetch returned before RCON connected
+                 (let [conn-list (mapv (fn [[instance-name info]]
+                                         {:instance       (name instance-name)
+                                          :host           (:host info)
+                                          :port           (:port info)
+                                          :last-query-at  nil})
+                                       conns)]
+                   (when (seq conn-list)
+                     (swap! db/app-db assoc-in [:server :rcon-connections] conn-list))))))
       (.catch (fn [_])))
   ;; Project state
   (dispatch! [:cmd/fetch-project]))

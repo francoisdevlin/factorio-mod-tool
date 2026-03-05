@@ -5,9 +5,13 @@
 
 (defonce app-db
   (r/atom
-   {:navigation {:section      :projects
-                 :selected-file nil
-                 :file-content  nil}
+   {:navigation {:section        :projects
+                 :selected-file  nil
+                 :file-content   nil
+                 :file-loading?  false
+                 :file-meta      nil
+                 :file-type      :text
+                 :file-mime-type nil}
 
     :server {:status           nil
              :capabilities     nil
@@ -15,7 +19,8 @@
              :rcon-health      {}
              :diagnostics      []
              :pipeline-status  nil
-             :pipeline-results {}}
+             :pipeline-results {}
+             :telemetry        {:threads {}}}
 
     :project {:current-path nil
               :config       nil}

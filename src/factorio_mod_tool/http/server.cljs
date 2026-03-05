@@ -4,10 +4,22 @@
   (:require [clojure.string :as str]
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
+            [factorio-mod-tool.http.sse :as sse]
             [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.state :as state]
             [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.http.static :as static]))
+
+;; ---------------------------------------------------------------------------
+;; Route lookup for WS method+path resolution
+;; ---------------------------------------------------------------------------
+
+(def ^:private path-to-command
+  "Map of [method path] -> command-name for resolving GUI WS requests."
+  (into {}
+        (map (fn [{:keys [command method path]}]
+               [[method path] command]))
+        routes/route-specs))
 
 (def ^:private http (js/require "http"))
 (def ^:private WebSocketServer (.-WebSocketServer (js/require "ws")))
@@ -20,12 +32,22 @@
   (when (= (.-readyState ws) (.-OPEN ws))
     (.send ws (js/JSON.stringify (clj->js msg)))))
 
+(defn- resolve-command
+  "Resolve command name from msg. Supports both {:command \"name\"} and
+   {:method \"GET\" :path \"/api/...\"} styles."
+  [{:keys [command method path]}]
+  (or command
+      (when (and method path)
+        (let [k [(keyword (str/lower-case method)) path]]
+          (get path-to-command k)))))
+
 (defn- handle-command [^js ws msg]
-  (let [{:keys [id command params]} msg]
+  (let [{:keys [id params body]} msg
+        command (resolve-command msg)]
     (if-not command
       (send-ws! ws {:type "error" :id id
                      :message "Missing required field: command"})
-      (-> (queue/submit! command (or params {}))
+      (-> (queue/submit! command (or params body {}))
           (p/then (fn [result]
                     (send-ws! ws {:type   "response"
                                   :id     id
@@ -45,6 +67,7 @@
   (.on wss "connection"
     (fn [^js ws _req]
       (swap! state/ws-clients conj ws)
+      (swap! state/ws-subscribers conj ws)
       (.on ws "message"
         (fn [raw]
           (let [msg (try
@@ -100,6 +123,14 @@
       ;; CORS preflight
       (= method "options")
       (handle-cors-preflight req res)
+
+      ;; MCP SSE transport: GET /mcp/sse
+      (and (= method "get") (= url "/mcp/sse"))
+      (sse/handle-sse-connect req res)
+
+      ;; MCP SSE transport: POST /mcp
+      (and (= method "post") (.startsWith raw-url "/mcp"))
+      (sse/handle-mcp-post req res)
 
       ;; API routes
       :else

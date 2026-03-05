@@ -41,7 +41,8 @@
               "state-change"
               (case (:key msg)
                 "project"    (dispatch/dispatch! [:server/project (:data msg)])
-                "connection" nil ;; already handled by rcon-health/rcon-state
+                "connection" (dispatch/dispatch! [:server/connection-state (:data msg)])
+                "telemetry"  (dispatch/dispatch! [:server/telemetry (:data msg)])
                 nil)
 
               nil))))

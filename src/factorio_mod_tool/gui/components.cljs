@@ -4,7 +4,13 @@
             [factorio-mod-tool.gui.state :as state]
             [factorio-mod-tool.gui.dispatch :as dispatch]
             ["highlight.js/lib/core" :as hljs]
-            ["highlight.js/lib/languages/lua" :as lua-lang]))
+            ["highlight.js/lib/languages/lua" :as lua-lang]
+            ["highlight.js/lib/languages/json" :as json-lang]
+            ["highlight.js/lib/languages/ini" :as ini-lang]
+            ["highlight.js/lib/languages/markdown" :as markdown-lang]
+            ["highlight.js/lib/languages/xml" :as xml-lang]
+            ["highlight.js/lib/languages/javascript" :as js-lang]
+            ["highlight.js/lib/languages/plaintext" :as plaintext-lang]))
 
 ;; ---------------------------------------------------------------------------
 ;; Top bar
@@ -65,11 +71,38 @@
     [:p description]]])
 
 ;; ---------------------------------------------------------------------------
+;; Shared utilities
+;; ---------------------------------------------------------------------------
+
+(defn- relative-time
+  "Returns a human-readable relative time string for an ISO timestamp."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))
+          diff (- now then)
+          secs (Math/floor (/ diff 1000))
+          mins (Math/floor (/ secs 60))
+          hrs  (Math/floor (/ mins 60))]
+      (cond
+        (< secs 5)  "just now"
+        (< secs 60) (str secs "s ago")
+        (< mins 60) (str mins "m ago")
+        :else       (str hrs "h " (mod mins 60) "m ago")))))
+
+;; ---------------------------------------------------------------------------
 ;; File tree
 ;; ---------------------------------------------------------------------------
 
-(defn- tree-node [{:keys [name path type children expanded?]} depth]
-  (let [indent (* depth 16)]
+(defn- node-name
+  "Derive display name from a path (last segment)."
+  [path]
+  (let [parts (.split (str path) "/")]
+    (aget parts (dec (.-length parts)))))
+
+(defn- tree-node [{:keys [path type children expanded? mtime]} depth]
+  (let [indent (* depth 16)
+        display-name (node-name path)]
     [:<>
      [:div.tree-item
       {:class (cond-> ""
@@ -81,7 +114,9 @@
                      (dispatch/dispatch! [:toggle-tree-node path])
                      (dispatch/dispatch! [:select-file path])))}
       [:span.tree-icon (if (= type :dir) (if expanded? "\u25BE" "\u25B8") "\u25CB")]
-      name]
+      [:span.tree-name display-name]
+      (when mtime
+        [:span.tree-mtime (relative-time mtime)])]
      (when (and (= type :dir) expanded? children)
        (for [child children]
          ^{:key (:path child)}
@@ -97,17 +132,133 @@
        [tree-node node 0]))])
 
 ;; ---------------------------------------------------------------------------
-;; Center panel (file viewer)
+;; Highlight.js language registration
 ;; ---------------------------------------------------------------------------
+
+(.registerLanguage hljs "lua" lua-lang)
+(.registerLanguage hljs "json" json-lang)
+(.registerLanguage hljs "ini" ini-lang)
+(.registerLanguage hljs "markdown" markdown-lang)
+(.registerLanguage hljs "xml" xml-lang)
+(.registerLanguage hljs "javascript" js-lang)
+(.registerLanguage hljs "plaintext" plaintext-lang)
+
+(def ^:private ext->language
+  "Map file extensions to highlight.js language names."
+  {".lua"  "lua"
+   ".json" "json"
+   ".cfg"  "ini"
+   ".ini"  "ini"
+   ".md"   "markdown"
+   ".xml"  "xml"
+   ".html" "xml"
+   ".js"   "javascript"
+   ".cljs" "javascript"
+   ".clj"  "javascript"
+   ".edn"  "javascript"
+   ".txt"  "plaintext"})
+
+(defn- detect-language
+  "Detect highlight.js language from a file path extension."
+  [path]
+  (when path
+    (let [dot-idx (.lastIndexOf path ".")]
+      (when (pos? dot-idx)
+        (let [ext (.substring path dot-idx)]
+          (get ext->language (.toLowerCase ext) "plaintext"))))))
+
+;; ---------------------------------------------------------------------------
+;; Center panel (file viewer with syntax highlighting)
+;; ---------------------------------------------------------------------------
+
+(defn- highlighted-code
+  "Renders file content with syntax highlighting using highlight.js.
+   Re-highlights when content or selected file changes."
+  []
+  (let [code-ref (atom nil)
+        highlight! (fn []
+                     (when-let [el @code-ref]
+                       (let [content @state/file-content
+                             lang    (detect-language @state/selected-file)]
+                         (when content
+                           (set! (.-className el) (str "language-" (or lang "plaintext")))
+                           (set! (.-textContent el) content)
+                           (.removeAttribute el "data-highlighted")
+                           (.highlightElement hljs el)))))]
+    (r/create-class
+     {:component-did-mount  (fn [_] (highlight!))
+      :component-did-update (fn [_] (highlight!))
+      :reagent-render
+      (fn []
+        @state/file-content
+        @state/selected-file
+        [:pre.file-code-block
+         [:code {:ref #(reset! code-ref %)}]])})))
+
+(defn- image-viewer
+  "Renders a base64-encoded image with its MIME type."
+  []
+  (let [content   @state/file-content
+        mime-type (or @state/file-mime-type "image/png")]
+    [:div.image-viewer
+     [:img {:src (str "data:" mime-type ";base64," content)
+            :alt @state/selected-file
+            :style {:max-width "100%" :max-height "100%"}}]]))
+
+(defn- binary-placeholder
+  "Placeholder for non-viewable binary files."
+  []
+  [:div.binary-placeholder
+   [:div.binary-icon "\uD83D\uDCC4"]
+   [:div.binary-message "Binary file"]
+   [:div.binary-detail (str (when-let [meta @state/file-meta]
+                              (let [size (:size meta)]
+                                (cond
+                                  (nil? size)       ""
+                                  (< size 1024)     (str size " bytes")
+                                  (< size 1048576)  (str (.toFixed (/ size 1024) 1) " KB")
+                                  :else             (str (.toFixed (/ size 1048576) 1) " MB")))))]])
+
+(defn- lua-file? [path]
+  (and path (.endsWith (.toLowerCase (str path)) ".lua")))
+
+(defn- check-lua-live-indicator []
+  (let [result @state/check-lua-live-result]
+    (when result
+      [:div.check-lua-live-result
+       {:class (name (or (:status result) :unknown))}
+       (case (:status result)
+         :checking [:span.check-status "\u23F3 Checking..."]
+         :ok       [:span.check-status "\u2713 OK"]
+         :error    [:span.check-status "\u2717 " (:result result)]
+         nil)])))
 
 (defn center-panel []
   [:div.center-panel
    (if @state/selected-file
-     [:<>
-      [:div.file-tab-bar
-       [:div.file-tab.active @state/selected-file]]
-      [:div.file-content
-       (or @state/file-content "Select a file to view its contents.")]]
+     (let [meta      @state/file-meta
+           loading?  @state/file-loading?
+           file-type (or @state/file-type :text)
+           file      @state/selected-file]
+       [:<>
+        [:div.file-tab-bar
+         [:div.file-tab.active
+          file
+          (when (:mtime meta)
+            [:span.file-tab-mtime (relative-time (:mtime meta))])]
+         (when (lua-file? file)
+           [:button.check-lua-live-btn
+            {:on-click #(dispatch/dispatch! [:cmd/check-lua-live file])
+             :title    "Send to Factorio and check if it loads"}
+            "\u25B6 Check Live"])]
+        [check-lua-live-indicator]
+        [:div.file-content
+         (cond
+           loading?                [:div.file-loading "Loading..."]
+           (= file-type :image)   [image-viewer]
+           (= file-type :binary)  [binary-placeholder]
+           @state/file-content     [highlighted-code]
+           :else                   [:div.empty-state "Select a file to view its contents."])]])
      [:div.empty-state "Select a file from the tree to view"])])
 
 ;; ---------------------------------------------------------------------------
@@ -144,8 +295,6 @@
 ;; ---------------------------------------------------------------------------
 ;; Lua code preview (highlight.js)
 ;; ---------------------------------------------------------------------------
-
-(.registerLanguage hljs "lua" lua-lang)
 
 (def sample-lua
   "-- Factorio mod: data stage
@@ -229,22 +378,6 @@ end)")
 ;; ---------------------------------------------------------------------------
 ;; Connection dashboard — hero/secondary layout
 ;; ---------------------------------------------------------------------------
-
-(defn- relative-time
-  "Returns a human-readable relative time string for an ISO timestamp."
-  [iso-str]
-  (when iso-str
-    (let [then (.getTime (js/Date. iso-str))
-          now  (.getTime (js/Date.))
-          diff (- now then)
-          secs (Math/floor (/ diff 1000))
-          mins (Math/floor (/ secs 60))
-          hrs  (Math/floor (/ mins 60))]
-      (cond
-        (< secs 5)  "just now"
-        (< secs 60) (str secs "s ago")
-        (< mins 60) (str mins "m ago")
-        :else       (str hrs "h " (mod mins 60) "m ago")))))
 
 (defn- uptime-str
   "Returns a human-readable uptime from an ISO start time."
@@ -403,13 +536,50 @@ end)")
                       :else "idle")}
             target]))]]]))
 
+;; --- Thread Telemetry ---
+
+(defn- thread-stale?
+  "Returns true if a thread hasn't run in an unexpectedly long time."
+  [last-run-at expected-interval-ms]
+  (when last-run-at
+    (let [elapsed (- (.getTime (js/Date.)) (.getTime (js/Date. last-run-at)))]
+      (> elapsed (* 3 expected-interval-ms)))))
+
+(def ^:private thread-config
+  {:scanner   {:label "Directory Scanner" :expected-ms 1000}
+   :heartbeat {:label "RCON Heartbeat"    :expected-ms 15000}})
+
+(defn- thread-telemetry-panel []
+  (let [threads @state/thread-telemetry]
+    [:div.thread-telemetry
+     (if (empty? threads)
+       [:div.thread-empty "No background threads active"]
+       (for [[thread-key {:keys [label expected-ms]}] thread-config]
+         (let [data (or (get threads thread-key)
+                        (get threads (name thread-key)))]
+           ^{:key thread-key}
+           [:div.thread-row
+            [:span.thread-dot
+             {:class (cond
+                       (nil? data)                                  "idle"
+                       (thread-stale? (:last-run-at data) expected-ms) "warning"
+                       :else                                        "ok")}]
+            [:span.thread-label label]
+            (if data
+              [:<>
+               [:span.thread-stat (str (relative-time (:last-run-at data)))]
+               [:span.thread-stat (str (:run-count data) " runs")]
+               [:span.thread-stat (str (.toFixed (or (:avg-ms data) 0) 1) "ms avg")]]
+              [:span.thread-stat "Not started"])])))]))
+
 ;; --- Main Connection Panel ---
 
 (defn connection-panel []
   (let [tick              (r/atom 0)
         interval-id       (atom nil)
         toolchain-open?   (r/atom false)
-        internals-open?   (r/atom false)]
+        internals-open?   (r/atom false)
+        threads-open?     (r/atom true)]
     (r/create-class
      {:component-did-mount
       (fn [_]
@@ -441,6 +611,9 @@ end)")
                 ^{:key (:instance conn)}
                 [rcon-instance-row conn (get health-map (:instance conn))])])
            ;; Collapsible diagnostics sections
+           [collapsible-section "Background Threads" @threads-open?
+            #(swap! threads-open? not)
+            [thread-telemetry-panel]]
            [collapsible-section "Toolchain Health" @toolchain-open?
             #(swap! toolchain-open? not)
             [toolchain-health]]

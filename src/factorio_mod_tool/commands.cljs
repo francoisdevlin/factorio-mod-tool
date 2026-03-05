@@ -13,7 +13,10 @@
             [factorio-mod-tool.rcon.client :as rcon]
             [factorio-mod-tool.rcon.queries :as rcon-queries]
             [factorio-mod-tool.bundle.pack :as pack]
-            [factorio-mod-tool.repl :as repl]))
+            [factorio-mod-tool.repl :as repl]
+            [factorio-mod-tool.scanner :as scanner]
+            [factorio-mod-tool.util.config :as config]
+            [factorio-mod-tool.util.fs :as fs]))
 
 (defn- command
   "Create a command catalog entry."
@@ -421,13 +424,14 @@
 
    (command
     "open-project"
-    "Open a project directory as the active context. Reads .fmod.json config, populates the file tree, and sets the working mod path for all tools."
+    "Open a project directory as the active context. Reads .fmod.json config, populates the file tree, starts the periodic directory scanner, and sets the working mod path for all tools."
     {:type       "object"
      :properties {:path {:type        "string"
                          :description "Path to the project directory"}}
      :required   ["path"]}
     (fn [{:keys [path]}]
       (p/let [result (state/open-project! path)]
+        (scanner/start-scanner!)
         {:path      (:path result)
          :mod-path  (:mod-path result)
          :has-config (some? (:config result))
@@ -445,7 +449,135 @@
          {:current-path (:current-path project)
           :config       (:config project)
           :has-project  (some? (:current-path project))
-          :file-tree    (:file-tree project)}))))])
+          :file-tree    (:file-tree project)}))))
+
+   (command
+    "update-file-tree"
+    "Update the project file tree in state. Used internally by the directory scanner to push file tree changes through the command queue for unified state management and WebSocket broadcast."
+    {:type       "object"
+     :properties {:tree {:type        "array"
+                         :description "Nested file tree structure from the scanner"}}
+     :required   ["tree"]}
+    (fn [{:keys [tree]}]
+      (swap! state/app-state assoc-in [:project :file-tree] tree)
+      (p/resolved {:updated true
+                   :entry-count (count tree)})))
+
+   (command
+    "reload-config"
+    "Reload .fmod.json configuration from disk. Triggered automatically when the scanner detects the config file has changed. Updates project config in state and reconnects RCON if settings changed."
+    {:type       "object"
+     :properties {:path {:type        "string"
+                         :description "Path to the project directory"}}
+     :required   ["path"]}
+    (fn [{:keys [path]}]
+      (let [old-config (get-in @state/app-state [:project :config])]
+        (-> (p/let [{:keys [config config-path]} (config/read-config path)]
+              (swap! state/app-state
+                     (fn [s]
+                       (-> s
+                           (assoc-in [:project :config] config)
+                           (assoc-in [:project :config-path] config-path))))
+              (let [old-rcon (:rcon old-config)
+                    new-rcon (:rcon config)
+                    rcon-changed? (or (not= (:host old-rcon) (:host new-rcon))
+                                      (not= (:port old-rcon) (:port new-rcon)))]
+                {:reloaded    true
+                 :config-path config-path
+                 :rcon-changed rcon-changed?}))
+            (p/catch (fn [err]
+                       (js/process.stderr.write
+                        (str "Config reload failed: " (ex-message err) "\n"))
+                       {:reloaded false
+                        :error    (ex-message err)}))))))
+
+   (command
+    "list-files"
+    "List all files in the currently opened project directory. Returns the scanned file tree with relative paths, types, mtimes, and sizes. The tree is maintained by a periodic background scanner."
+    {:type "object"
+     :properties {}}
+    (fn [_params]
+      (scanner/list-files)))
+
+   (command
+    "read-file"
+    "Read the contents of a file in the currently opened project. Takes a relative path and returns the file content with metadata. Images return base64 data; binary files return a placeholder."
+    {:type       "object"
+     :properties {:path {:type        "string"
+                         :description "Relative file path within the project directory"}}
+     :required   ["path"]}
+    (fn [{:keys [path]}]
+      (let [project-path (state/current-project-path)
+            ext          (let [dot-idx (.lastIndexOf path ".")]
+                           (when (pos? dot-idx)
+                             (.toLowerCase (.substring path dot-idx))))
+            image-exts   #{".png" ".jpg" ".jpeg" ".gif" ".bmp" ".svg" ".ico" ".webp"}
+            binary-exts  #{".zip" ".tar" ".gz" ".dat" ".bin" ".exe" ".dll" ".so"
+                           ".woff" ".woff2" ".ttf" ".otf" ".mp3" ".wav" ".ogg"
+                           ".mp4" ".avi" ".mov"}
+            ext->mime    {".png" "image/png" ".jpg" "image/jpeg" ".jpeg" "image/jpeg"
+                          ".gif" "image/gif" ".bmp" "image/bmp" ".svg" "image/svg+xml"
+                          ".ico" "image/x-icon" ".webp" "image/webp"}
+            file-type    (cond
+                           (contains? image-exts ext) :image
+                           (contains? binary-exts ext) :binary
+                           :else :text)]
+        (if-not project-path
+          (p/rejected (ex-info "No project open" {}))
+          (let [abs-path   (fs/resolve-path project-path path)
+                normalized (fs/resolve-path abs-path)]
+            ;; Prevent path traversal outside project directory
+            (if-not (.startsWith normalized project-path)
+              (p/rejected (ex-info "Path outside project directory" {:path path}))
+              (-> (p/let [st (fs/stat abs-path)
+                          content (case file-type
+                                    :image  (fs/read-file-base64 abs-path)
+                                    :binary nil
+                                    (fs/read-file abs-path))]
+                    (cond-> {:path      path
+                             :file-type (name file-type)
+                             :mtime     (.toISOString (.-mtime st))
+                             :size      (.-size st)}
+                      (= file-type :text)  (assoc :content content)
+                      (= file-type :image) (assoc :content content
+                                                  :mime-type (get ext->mime ext "image/png"))))
+                  (p/catch (fn [err]
+                             (throw (ex-info (str "Failed to read file: " (ex-message err))
+                                             {:path path})))))))))))
+
+   (command
+    "check-lua-live"
+    "Send a Lua file from the project to a running Factorio instance via RCON and check if it loads cleanly. Returns OK or the error message from Factorio's Lua runtime."
+    {:type       "object"
+     :properties {:path     {:type        "string"
+                             :description "Relative file path within the project (must be a .lua file)"}
+                  :instance {:type        "string"
+                             :description "RCON instance name (default: __project__)"}}
+     :required   ["path"]}
+    (fn [{:keys [path instance]}]
+      (let [project-path (state/current-project-path)
+            inst         (or instance "__project__")]
+        (if-not project-path
+          (p/rejected (ex-info "No project open" {}))
+          (let [abs-path   (fs/resolve-path project-path path)
+                normalized (fs/resolve-path abs-path)]
+            (if-not (.startsWith normalized project-path)
+              (p/rejected (ex-info "Path outside project directory" {:path path}))
+              (-> (p/let [src      (fs/read-file abs-path)
+                          lua-cmd  (str "/silent-command "
+                                        "local ok, err = load("
+                                        (pr-str src)
+                                        ") if not ok then rcon.print('ERROR: ' .. err) "
+                                        "else rcon.print('OK') end")
+                          response (rcon/exec inst lua-cmd)
+                          trimmed  (.trim (str response))]
+                    {:file   path
+                     :status (if (.startsWith trimmed "OK") :ok :error)
+                     :result trimmed})
+                  (p/catch (fn [err]
+                             {:file    path
+                              :status  :error
+                              :result  (ex-message err)})))))))))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."

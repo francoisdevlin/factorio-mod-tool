@@ -11,7 +11,7 @@
 ;; HTTP route metadata — maps command names to REST endpoints
 ;; ---------------------------------------------------------------------------
 
-(def ^:private route-specs
+(def route-specs
   "Maps each catalog command to its HTTP method and path."
   [;; Queries (GET)
    {:command "status"       :method :get  :path "/api/status"}
@@ -41,7 +41,10 @@
    {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}
    ;; Project
    {:command "open-project"      :method :post :path "/api/project/open"}
-   {:command "get-project"       :method :get  :path "/api/project"}])
+   {:command "get-project"       :method :get  :path "/api/project"}
+   {:command "list-files"        :method :get  :path "/api/project/files"}
+   {:command "read-file"        :method :post :path "/api/project/read-file"}
+   {:command "check-lua-live"   :method :post :path "/api/check-lua-live"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers

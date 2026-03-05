@@ -80,32 +80,35 @@
 
 (defn heartbeat
   "Send a single heartbeat probe to a Factorio instance.
-   Updates connection health state and broadcasts status.
+   Updates connection health state, broadcasts status, and records telemetry.
    Returns a promise of the health result."
   [instance-name]
   (if-let [{:keys [conn]} (state/get-rcon instance-name)]
-    (-> (.send conn heartbeat-command)
-        (p/then (fn [response]
-                  (let [ok? (= (.trim (str response)) "ok")]
-                    (state/update-rcon-health! instance-name (if ok? :alive :unreachable))
-                    (let [conn-data (state/get-rcon instance-name)]
-                      (state/broadcast! {:type     "rcon-health"
-                                         :instance instance-name
-                                         :health   (name (:health conn-data))
-                                         :last-heartbeat-at (:last-heartbeat-at conn-data)})
-                      {:instance instance-name
-                       :health   (:health conn-data)
-                       :last-heartbeat-at (:last-heartbeat-at conn-data)}))))
-        (p/catch (fn [err]
-                   (state/update-rcon-health! instance-name :timeout)
-                   (let [conn-data (state/get-rcon instance-name)]
-                     (state/broadcast! {:type     "rcon-health"
-                                        :instance instance-name
-                                        :health   (name (:health conn-data))
-                                        :failures (:heartbeat-failures conn-data)})
-                     {:instance instance-name
-                      :health   (:health conn-data)
-                      :error    (ex-message err)}))))
+    (let [start-ms (.now js/Date)]
+      (-> (.send conn heartbeat-command)
+          (p/then (fn [response]
+                    (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                    (let [ok? (= (.trim (str response)) "ok")]
+                      (state/update-rcon-health! instance-name (if ok? :alive :unreachable))
+                      (let [conn-data (state/get-rcon instance-name)]
+                        (state/broadcast! {:type     "rcon-health"
+                                           :instance instance-name
+                                           :health   (name (:health conn-data))
+                                           :last-heartbeat-at (:last-heartbeat-at conn-data)})
+                        {:instance instance-name
+                         :health   (:health conn-data)
+                         :last-heartbeat-at (:last-heartbeat-at conn-data)}))))
+          (p/catch (fn [err]
+                     (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                     (state/update-rcon-health! instance-name :timeout)
+                     (let [conn-data (state/get-rcon instance-name)]
+                       (state/broadcast! {:type     "rcon-health"
+                                          :instance instance-name
+                                          :health   (name (:health conn-data))
+                                          :failures (:heartbeat-failures conn-data)})
+                       {:instance instance-name
+                        :health   (:health conn-data)
+                        :error    (ex-message err)})))))
     (p/resolved {:instance instance-name :health :unknown :error "No connection"})))
 
 (defn- recently-queried?
@@ -189,11 +192,16 @@
   (stop-heartbeat-scheduler!)
   (let [timer (js/setInterval
                (fn []
-                 (doseq [[instance-name _conn] (get-in @state/app-state [:connection :instances])]
-                   (when-not (recently-queried? instance-name)
-                     (if-let [submit @queue-submit!]
-                       (submit "rcon-heartbeat" {:instance instance-name})
-                       (heartbeat instance-name)))))
+                 (let [instances (get-in @state/app-state [:connection :instances])
+                       start-ms (.now js/Date)]
+                   (if (empty? instances)
+                     ;; Record idle cycle so GUI shows scheduler is alive
+                     (state/record-thread-run! :heartbeat (- (.now js/Date) start-ms))
+                     (doseq [[instance-name _conn] instances]
+                       (when-not (recently-queried? instance-name)
+                         (if-let [submit @queue-submit!]
+                           (submit "rcon-heartbeat" {:instance instance-name})
+                           (heartbeat instance-name)))))))
                interval-ms)]
     (reset! global-heartbeat-timer timer)
     (js/process.stderr.write

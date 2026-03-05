@@ -23,6 +23,18 @@
 ;; Content of the currently viewed file
 (def file-content (r/cursor db/app-db [:navigation :file-content]))
 
+;; Whether a file is currently loading
+(def file-loading? (r/cursor db/app-db [:navigation :file-loading?]))
+
+;; Metadata for the currently viewed file {:mtime, :size}
+(def file-meta (r/cursor db/app-db [:navigation :file-meta]))
+
+;; File type: :text, :image, or :binary
+(def file-type (r/cursor db/app-db [:navigation :file-type]))
+
+;; MIME type for image files (e.g. "image/png")
+(def file-mime-type (r/cursor db/app-db [:navigation :file-mime-type]))
+
 ;; Diagnostics: vector of diagnostic maps
 (def diagnostics (r/cursor db/app-db [:server :diagnostics]))
 
@@ -50,3 +62,9 @@
 ;; Project state
 (def project-path (r/cursor db/app-db [:project :current-path]))
 (def project-config (r/cursor db/app-db [:project :config]))
+
+;; Check Lua live result: nil or {:file, :status (:ok/:error), :result, :checking?}
+(def check-lua-live-result (r/cursor db/app-db [:check-lua-live]))
+
+;; Thread telemetry: map of thread-key -> {:last-run-at, :run-count, :avg-ms}
+(def thread-telemetry (r/cursor db/app-db [:server :telemetry :threads]))
