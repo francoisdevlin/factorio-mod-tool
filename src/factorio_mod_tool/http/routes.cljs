@@ -40,7 +40,8 @@
    ;; Project
    {:command "open-project"      :method :post :path "/api/project/open"}
    {:command "get-project"       :method :get  :path "/api/project"}
-   {:command "list-files"        :method :get  :path "/api/project/files"}])
+   {:command "list-files"        :method :get  :path "/api/project/files"}
+   {:command "read-file"        :method :post :path "/api/project/read-file"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers

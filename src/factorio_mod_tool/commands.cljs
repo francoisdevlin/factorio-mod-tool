@@ -14,7 +14,8 @@
             [factorio-mod-tool.rcon.queries :as rcon-queries]
             [factorio-mod-tool.bundle.pack :as pack]
             [factorio-mod-tool.repl :as repl]
-            [factorio-mod-tool.scanner :as scanner]))
+            [factorio-mod-tool.scanner :as scanner]
+            [factorio-mod-tool.util.fs :as fs]))
 
 (defn- command
   "Create a command catalog entry."
@@ -384,7 +385,33 @@
     {:type "object"
      :properties {}}
     (fn [_params]
-      (scanner/list-files)))])
+      (scanner/list-files)))
+
+   (command
+    "read-file"
+    "Read the contents of a file in the currently opened project. Takes a relative path and returns the file content with metadata."
+    {:type       "object"
+     :properties {:path {:type        "string"
+                         :description "Relative file path within the project directory"}}
+     :required   ["path"]}
+    (fn [{:keys [path]}]
+      (let [project-path (state/current-project-path)]
+        (if-not project-path
+          (p/rejected (ex-info "No project open" {}))
+          (let [abs-path   (fs/resolve-path project-path path)
+                normalized (fs/resolve-path abs-path)]
+            ;; Prevent path traversal outside project directory
+            (if-not (.startsWith normalized project-path)
+              (p/rejected (ex-info "Path outside project directory" {:path path}))
+              (-> (p/let [content (fs/read-file abs-path)
+                          st      (fs/stat abs-path)]
+                    {:path    path
+                     :content content
+                     :mtime   (.toISOString (.-mtime st))
+                     :size    (.-size st)})
+                  (p/catch (fn [err]
+                             (throw (ex-info (str "Failed to read file: " (ex-message err))
+                                             {:path path})))))))))))])
 
 (def catalog-by-name
   "Index of commands by name for O(1) lookup."

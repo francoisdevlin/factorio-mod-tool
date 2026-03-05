@@ -23,6 +23,12 @@
 ;; Content of the currently viewed file
 (def file-content (r/cursor db/app-db [:navigation :file-content]))
 
+;; Whether a file is currently loading
+(def file-loading? (r/cursor db/app-db [:navigation :file-loading?]))
+
+;; Metadata for the currently viewed file {:mtime, :size}
+(def file-meta (r/cursor db/app-db [:navigation :file-meta]))
+
 ;; Diagnostics: vector of diagnostic maps
 (def diagnostics (r/cursor db/app-db [:server :diagnostics]))
 
