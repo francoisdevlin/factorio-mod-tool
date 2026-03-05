@@ -6,14 +6,14 @@ valid and invalid Lua — confirming the tool works correctly.
 
 ## Prerequisites
 
-- [Clojure CLI](https://clojure.org/guides/install_clojure) (1.11+)
-- Java 17+
+- [Node.js](https://nodejs.org/) (18+)
+- npm (comes with Node.js)
 
 Verify your setup:
 
 ```bash
-clojure --version
-java -version
+node --version
+npm --version
 ```
 
 ## 1. Build and Start the MCP Server
@@ -25,10 +25,17 @@ git clone https://github.com/francoisdevlin/factorio-mod-tool.git
 cd factorio-mod-tool
 ```
 
+Install dependencies and compile:
+
+```bash
+npm install
+npx shadow-cljs compile server
+```
+
 Start the MCP server (communicates over stdio using JSON-RPC):
 
 ```bash
-clojure -M:mcp
+node out/server.js
 ```
 
 The server is now listening on stdin for MCP tool-call requests. You can also
@@ -39,8 +46,8 @@ configure it in your MCP client (e.g., Claude Desktop) by adding to your
 {
   "mcpServers": {
     "factorio-mod-tool": {
-      "command": "clojure",
-      "args": ["-M:mcp"],
+      "command": "node",
+      "args": ["out/server.js"],
       "cwd": "/path/to/factorio-mod-tool"
     }
   }
