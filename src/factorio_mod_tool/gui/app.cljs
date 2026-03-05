@@ -7,10 +7,10 @@
 
 (defn app []
   [:div.app-layout
+   {:class (when (not= :projects @state/active-section) "single-panel")}
    [c/top-bar]
-   [c/file-tree-panel]
-   [c/center-panel]
-   [c/diagnostics-panel]
+   [c/nav-bar]
+   [c/section-content]
    [c/console-panel]])
 
 (defn- fetch-initial-data []

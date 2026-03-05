@@ -42,9 +42,13 @@
     /* Layout */
     .app-layout {
       display: grid;
-      grid-template-rows: 40px 1fr 200px;
+      grid-template-rows: 40px 36px 1fr 200px;
       grid-template-columns: 250px 1fr 300px;
       height: 100%;
+    }
+
+    .app-layout.single-panel {
+      grid-template-columns: 1fr;
     }
 
     .top-bar {
@@ -253,6 +257,65 @@
       font-size: 12px;
       padding: 6px 0;
       outline: none;
+    }
+
+    /* Nav bar */
+    .nav-bar {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      padding: 0 8px;
+      overflow-x: auto;
+    }
+
+    .nav-item {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      padding: 8px 14px;
+      font-size: 12px;
+      font-family: var(--font-sans);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .nav-item:hover {
+      color: var(--text-primary);
+      background: var(--bg-hover);
+    }
+
+    .nav-item.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* Placeholder panels */
+    .placeholder-panel {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-primary);
+    }
+
+    .placeholder-content {
+      text-align: center;
+      color: var(--text-muted);
+    }
+
+    .placeholder-content h2 {
+      font-size: 18px;
+      font-weight: 500;
+      margin-bottom: 8px;
+      color: var(--text-secondary);
+    }
+
+    .placeholder-content p {
+      font-size: 13px;
     }
 
     /* Pipeline toolbar */
