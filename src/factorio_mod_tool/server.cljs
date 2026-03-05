@@ -10,7 +10,8 @@
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.lint :as lint]
-            [factorio-mod-tool.rcon.client :as rcon]))
+            [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.bundle.pack :as pack]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool definitions
@@ -112,6 +113,30 @@
                                              :text (str "RCON error: " (ex-message err))}]
                                   :isError true}))))})
 
+(def pack-mod-tool
+  {:name        "pack-mod"
+   :description "Bundle a Factorio mod directory into a distributable zip file (modname_version.zip) with the correct top-level directory structure."
+   :inputSchema {:type       "object"
+                 :properties {:path        {:type        "string"
+                                            :description "Path to the mod directory (must contain info.json)"}
+                              :output-path {:type        "string"
+                                            :description "Full path for the output zip file (defaults to ../modname_version.zip)"}}
+                 :required   [:path]}
+   :tool-fn     (fn [_context arguments]
+                  (-> (let [mod-path (:path arguments)
+                            out-path (:output-path arguments)]
+                        (if out-path
+                          (pack/pack-mod mod-path out-path)
+                          (pack/pack-mod mod-path)))
+                      (p/then (fn [result]
+                                {:content [{:type "text"
+                                            :text (pr-str result)}]
+                                 :isError false}))
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "Pack error: " (ex-message err))}]
+                                  :isError true}))))})
+
 ;; ---------------------------------------------------------------------------
 ;; Session & context
 ;; ---------------------------------------------------------------------------
@@ -125,7 +150,8 @@
                      parse-lua-tool
                      lint-mod-tool
                      rcon-exec-tool
-                     rcon-inspect-tool]})))
+                     rcon-inspect-tool
+                     pack-mod-tool]})))
 
 (def context
   {:session      session
