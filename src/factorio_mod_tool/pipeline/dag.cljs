@@ -3,14 +3,15 @@
    No I/O or side effects — this is a data-in, data-out engine.")
 
 (def default-dag
-  "Built-in target DAG for fmod pipelines."
+  "Built-in target DAG for fmod pipelines.
+   :requires lists capabilities that must be present to run the target."
   {:check      {:deps []}
    :lint       {:deps [:check]}
-   :check-live {:deps [:check]}
-   :test       {:deps [:lint]}
+   :check-live {:deps [:check] :requires [:factorio-rcon]}
+   :test       {:deps [:lint]  :requires [:busted]}
    :pack       {:deps [:test]}
    :deploy     {:deps [:pack]}
-   :test-live  {:deps [:pack]}})
+   :test-live  {:deps [:pack]  :requires [:factorio-rcon :factorio-test]}})
 
 (defn merge-custom-targets
   "Merge custom pipeline config from .fmod.json into the default DAG.

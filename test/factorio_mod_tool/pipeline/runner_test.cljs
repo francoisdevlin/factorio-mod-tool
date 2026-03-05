@@ -98,3 +98,54 @@
             (is (= [] (:completed result)))
             (done))
           (p/catch (fn [err] (is false (str "Unexpected: " (ex-message err))) (done)))))))
+
+;; ---------------------------------------------------------------------------
+;; capability-based skipping
+;; ---------------------------------------------------------------------------
+
+(deftest execute-skips-targets-with-missing-capabilities
+  (async done
+    (let [dag {:a {:deps []}
+               :b {:deps [:a] :requires [:busted]}
+               :c {:deps [:a]}}
+          calls (atom [])
+          run-fn (make-run-fn calls #{})
+          capabilities {:busted {:available false}}]
+      (-> (p/let [result (runner/execute [:a :b :c] dag {:pre {} :post {}} run-fn
+                           {:capabilities capabilities})]
+            (is (= :ok (:status result)))
+            ;; :b should be skipped, :a and :c should run
+            (is (= [:a :c] (:completed result)))
+            (is (= 1 (count (:skipped result))))
+            (is (= :b (:target (first (:skipped result)))))
+            (is (= [:a :c] @calls))
+            (done))
+          (p/catch (fn [err] (is false (str "Unexpected: " (ex-message err))) (done)))))))
+
+(deftest execute-force-overrides-capability-check
+  (async done
+    (let [dag {:a {:deps [] :requires [:busted]}}
+          calls (atom [])
+          run-fn (make-run-fn calls #{})
+          capabilities {:busted {:available false}}]
+      (-> (p/let [result (runner/execute [:a] dag {:pre {} :post {}} run-fn
+                           {:capabilities capabilities :force true})]
+            (is (= :ok (:status result)))
+            (is (= [:a] (:completed result)))
+            (is (empty? (:skipped result)))
+            (done))
+          (p/catch (fn [err] (is false (str "Unexpected: " (ex-message err))) (done)))))))
+
+(deftest execute-runs-targets-with-met-capabilities
+  (async done
+    (let [dag {:a {:deps [] :requires [:lua]}}
+          calls (atom [])
+          run-fn (make-run-fn calls #{})
+          capabilities {:lua {:available true}}]
+      (-> (p/let [result (runner/execute [:a] dag {:pre {} :post {}} run-fn
+                           {:capabilities capabilities})]
+            (is (= :ok (:status result)))
+            (is (= [:a] (:completed result)))
+            (is (empty? (:skipped result)))
+            (done))
+          (p/catch (fn [err] (is false (str "Unexpected: " (ex-message err))) (done)))))))

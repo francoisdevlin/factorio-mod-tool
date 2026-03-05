@@ -47,7 +47,8 @@
   (-> config
       (update :structure #(merge default-structure %))
       (update :rcon #(merge default-rcon %))
-      (update :pack #(merge default-pack %))))
+      (update :pack #(merge default-pack %))
+      (update :capabilities #(or % {}))))
 
 (defn- inject-rcon-password
   "Inject RCON password from FMOD_RCON_PASSWORD env var.

@@ -4,7 +4,8 @@
 
    Separates the execution engine from CLI concerns — this module deals only
    with running targets, not with argument parsing or output formatting."
-  (:require [promesa.core :as p]))
+  (:require [promesa.core :as p]
+            [factorio-mod-tool.util.capabilities :as caps]))
 
 (def ^:private child-process (js/require "child_process"))
 
@@ -60,6 +61,24 @@
       {:target target-key :status :ok :result result}
       {:target target-key :status :failed :result result})))
 
+(defn- check-capabilities
+  "Check if a target's required capabilities are met.
+   Returns {:met true} or {:met false :missing [keywords] :messages [strings]}."
+  [target-def capabilities]
+  (let [required (:requires target-def)]
+    (if (or (empty? required) (nil? capabilities))
+      {:met true}
+      (let [missing (filterv #(not (caps/available? capabilities %)) required)]
+        (if (empty? missing)
+          {:met true}
+          {:met false
+           :missing missing
+           :messages (mapv (fn [cap]
+                             (str "Missing: " (name cap)
+                                  (when-let [install (:install (get caps/capability-defs* cap))]
+                                    (str " — " install))))
+                           missing)})))))
+
 (defn execute
   "Execute a pipeline plan.
 
@@ -73,48 +92,66 @@
    Options:
      :on-start  - (fn [target-key]) callback before each target
      :on-finish - (fn [target-key status]) callback after each target
+     :capabilities - Result of caps/detect-all. When provided, targets with
+                     unmet :requires are skipped instead of failed.
+     :force    - If true, skip capability checks entirely
 
    Returns a promise of:
-     {:status :ok :completed [targets]}
+     {:status :ok :completed [targets] :skipped [targets]}
    or
-     {:status :failed :failed-target key :completed [targets] :result map}"
-  [plan dag hooks run-fn & [{:keys [on-start on-finish]}]]
+     {:status :failed :failed-target key :completed [targets] :skipped [targets] :result map}"
+  [plan dag hooks run-fn & [{:keys [on-start on-finish capabilities force]}]]
   (let [cache (atom #{})]
     (p/loop [remaining plan
-             completed []]
+             completed []
+             skipped []]
       (if (empty? remaining)
-        {:status :ok :completed completed}
-        (let [target (first remaining)]
+        {:status :ok :completed completed :skipped skipped}
+        (let [target (first remaining)
+              target-def (get dag target {})]
           (if (contains? @cache target)
             ;; Already ran this target (shared dep), skip
-            (p/recur (rest remaining) completed)
-            (p/let [_ (when on-start (on-start target))
-                    ;; Run pre-hooks
-                    pre-result (run-hooks (get-in hooks [:pre target]))
-                    _ (when (and (map? pre-result) (:hook-failed pre-result))
-                        (throw (ex-info (str "pre-" (name target) " hook failed: "
-                                             (:hook-failed pre-result))
-                                        {:target target
-                                         :phase :pre-hook
-                                         :result (:result pre-result)})))
-                    ;; Run the target
-                    target-def (get dag target {})
-                    outcome (run-target target target-def run-fn)]
-              (if (= :failed (:status outcome))
+            (p/recur (rest remaining) completed skipped)
+            (let [cap-check (if force
+                              {:met true}
+                              (check-capabilities target-def capabilities))]
+              (if-not (:met cap-check)
+                ;; Skip target due to missing capabilities
                 (do
-                  (when on-finish (on-finish target :failed))
-                  {:status :failed
-                   :failed-target target
-                   :completed completed
-                   :result (:result outcome)})
-                ;; Target succeeded — run post-hooks
-                (p/let [post-result (run-hooks (get-in hooks [:post target]))
-                        _ (when (and (map? post-result) (:hook-failed post-result))
-                            (throw (ex-info (str "post-" (name target) " hook failed: "
-                                                 (:hook-failed post-result))
-                                            {:target target
-                                             :phase :post-hook
-                                             :result (:result post-result)})))]
+                  (when on-start (on-start target))
+                  (when on-finish (on-finish target :skipped))
                   (swap! cache conj target)
-                  (when on-finish (on-finish target :ok))
-                  (p/recur (rest remaining) (conj completed target)))))))))))
+                  (p/recur (rest remaining) completed
+                           (conj skipped {:target target
+                                          :missing (:missing cap-check)
+                                          :messages (:messages cap-check)})))
+                (p/let [_ (when on-start (on-start target))
+                        ;; Run pre-hooks
+                        pre-result (run-hooks (get-in hooks [:pre target]))
+                        _ (when (and (map? pre-result) (:hook-failed pre-result))
+                            (throw (ex-info (str "pre-" (name target) " hook failed: "
+                                                 (:hook-failed pre-result))
+                                            {:target target
+                                             :phase :pre-hook
+                                             :result (:result pre-result)})))
+                        ;; Run the target
+                        outcome (run-target target target-def run-fn)]
+                  (if (= :failed (:status outcome))
+                    (do
+                      (when on-finish (on-finish target :failed))
+                      {:status :failed
+                       :failed-target target
+                       :completed completed
+                       :skipped skipped
+                       :result (:result outcome)})
+                    ;; Target succeeded — run post-hooks
+                    (p/let [post-result (run-hooks (get-in hooks [:post target]))
+                            _ (when (and (map? post-result) (:hook-failed post-result))
+                                (throw (ex-info (str "post-" (name target) " hook failed: "
+                                                     (:hook-failed post-result))
+                                                {:target target
+                                                 :phase :post-hook
+                                                 :result (:result post-result)})))]
+                      (swap! cache conj target)
+                      (when on-finish (on-finish target :ok))
+                      (p/recur (rest remaining) (conj completed target) skipped))))))))))))

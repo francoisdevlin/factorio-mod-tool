@@ -5,6 +5,7 @@
             [factorio-mod-tool.util.lua :as lua]
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.util.fs :as fs]
+            [factorio-mod-tool.util.capabilities :as caps]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.diagnostic :as diag]
             [factorio-mod-tool.rcon.client :as rcon]
@@ -100,6 +101,31 @@
         (println "  cd" project-name)
         (println "  fmod validate src/")
         (js/process.exit 0))
+      (p/catch (fn [err]
+                 (print-err "Error: " (ex-message err))
+                 (js/process.exit 1)))))
+
+;; ---------------------------------------------------------------------------
+;; Doctor command — show capability detection status
+;; ---------------------------------------------------------------------------
+
+(defn cmd-doctor []
+  (-> (p/let [capabilities (caps/detect-all)
+              statuses (caps/format-status capabilities)]
+        (println "fmod doctor — capability detection")
+        (println)
+        (doseq [{:keys [capability available detail install]} statuses]
+          (if available
+            (println (str "  OK " capability
+                          (when (not-empty detail) (str " (" detail ")"))))
+            (println (str "  -- " capability " (not found)"
+                          (when install (str "\n     " install))))))
+        (println)
+        (let [all-ok (every? :available statuses)]
+          (if all-ok
+            (println "  All capabilities detected.")
+            (println "  Some capabilities are missing. Related pipeline targets will be skipped."))
+          (js/process.exit 0)))
       (p/catch (fn [err]
                  (print-err "Error: " (ex-message err))
                  (js/process.exit 1)))))
@@ -216,6 +242,7 @@ Commands:
   check <files...>      Check Lua files for syntax errors (offline)
   check --live <files>  Check Lua files via RCON against running Factorio
   lint <mod-path>       Run lint rules on a mod (not yet implemented)
+  doctor                Show detected capabilities and install guidance
 
 Check options:
   --live                Validate via RCON against a running Factorio instance
@@ -305,6 +332,9 @@ Examples:
                 (print-err "Usage: fmod new-project <name>")
                 (js/process.exit 1))
             (cmd-new-project (first rest)))
+
+          "doctor"
+          (cmd-doctor)
 
           ;; unknown command
           (do (print-err (str "Unknown command: " cmd))
