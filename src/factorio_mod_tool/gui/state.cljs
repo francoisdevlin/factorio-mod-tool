@@ -65,3 +65,6 @@
 
 ;; Check Lua live result: nil or {:file, :status (:ok/:error), :result, :checking?}
 (def check-lua-live-result (r/cursor db/app-db [:check-lua-live]))
+
+;; Thread telemetry: map of thread-key -> {:last-run-at, :run-count, :avg-ms}
+(def thread-telemetry (r/cursor db/app-db [:server :telemetry :threads]))

@@ -536,13 +536,50 @@ end)")
                       :else "idle")}
             target]))]]]))
 
+;; --- Thread Telemetry ---
+
+(defn- thread-stale?
+  "Returns true if a thread hasn't run in an unexpectedly long time."
+  [last-run-at expected-interval-ms]
+  (when last-run-at
+    (let [elapsed (- (.getTime (js/Date.)) (.getTime (js/Date. last-run-at)))]
+      (> elapsed (* 3 expected-interval-ms)))))
+
+(def ^:private thread-config
+  {:scanner   {:label "Directory Scanner" :expected-ms 1000}
+   :heartbeat {:label "RCON Heartbeat"    :expected-ms 15000}})
+
+(defn- thread-telemetry-panel []
+  (let [threads @state/thread-telemetry]
+    [:div.thread-telemetry
+     (if (empty? threads)
+       [:div.thread-empty "No background threads active"]
+       (for [[thread-key {:keys [label expected-ms]}] thread-config]
+         (let [data (or (get threads thread-key)
+                        (get threads (name thread-key)))]
+           ^{:key thread-key}
+           [:div.thread-row
+            [:span.thread-dot
+             {:class (cond
+                       (nil? data)                                  "idle"
+                       (thread-stale? (:last-run-at data) expected-ms) "warning"
+                       :else                                        "ok")}]
+            [:span.thread-label label]
+            (if data
+              [:<>
+               [:span.thread-stat (str (relative-time (:last-run-at data)))]
+               [:span.thread-stat (str (:run-count data) " runs")]
+               [:span.thread-stat (str (.toFixed (or (:avg-ms data) 0) 1) "ms avg")]]
+              [:span.thread-stat "Not started"])])))]))
+
 ;; --- Main Connection Panel ---
 
 (defn connection-panel []
   (let [tick              (r/atom 0)
         interval-id       (atom nil)
         toolchain-open?   (r/atom false)
-        internals-open?   (r/atom false)]
+        internals-open?   (r/atom false)
+        threads-open?     (r/atom true)]
     (r/create-class
      {:component-did-mount
       (fn [_]
@@ -574,6 +611,9 @@ end)")
                 ^{:key (:instance conn)}
                 [rcon-instance-row conn (get health-map (:instance conn))])])
            ;; Collapsible diagnostics sections
+           [collapsible-section "Background Threads" @threads-open?
+            #(swap! threads-open? not)
+            [thread-telemetry-panel]]
            [collapsible-section "Toolchain Health" @toolchain-open?
             #(swap! toolchain-open? not)
             [toolchain-health]]

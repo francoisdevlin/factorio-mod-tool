@@ -145,6 +145,9 @@
   (when (= key "theme")
     (dispatch! [:set-theme value])))
 
+(defmethod handle-event :server/telemetry [[_ data]]
+  (swap! db/app-db assoc-in [:server :telemetry] data))
+
 (defn- collect-expanded-paths
   "Walk a tree and return a set of paths that are currently expanded."
   [tree]

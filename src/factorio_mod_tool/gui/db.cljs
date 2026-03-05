@@ -19,7 +19,8 @@
              :rcon-health      {}
              :diagnostics      []
              :pipeline-status  nil
-             :pipeline-results {}}
+             :pipeline-results {}
+             :telemetry        {:threads {}}}
 
     :project {:current-path nil
               :config       nil}
