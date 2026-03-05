@@ -136,18 +136,30 @@
         (get-in config [:http :port])
         3000)))
 
+(defn start-server!
+  "Start the HTTP+WS server on the given port. Returns a promise that resolves
+   when the server is listening."
+  [port]
+  (-> (p/let [^js server (.createServer http handle-request)
+              wss (WebSocketServer. #js {:server server})]
+        (setup-websocket wss)
+        (js/Promise.
+         (fn [resolve _reject]
+           (.listen server port
+             (fn []
+               (js/process.stderr.write (str "factorio-mod-tool HTTP server listening on port " port "\n"))
+               (js/process.stderr.write (str "  REST API: http://localhost:" port "/api/status\n"))
+               (js/process.stderr.write (str "  WebSocket: ws://localhost:" port "/ws\n"))
+               (resolve server))))))
+      (p/catch (fn [err]
+                 (js/process.stderr.write (str "Failed to start HTTP server: " (ex-message err) "\n"))
+                 (throw err)))))
+
 (defn main [& _args]
   (-> (p/let [config-result (-> (config/read-config)
                                 (p/catch (fn [_] {:config {} :config-path nil})))
-              port (parse-port-arg (:config config-result))
-              ^js server (.createServer http handle-request)
-              wss (WebSocketServer. #js {:server server})]
-        (setup-websocket wss)
-        (.listen server port
-          (fn []
-            (js/console.log (str "factorio-mod-tool HTTP server listening on port " port))
-            (js/console.log (str "  REST API: http://localhost:" port "/api/status"))
-            (js/console.log (str "  WebSocket: ws://localhost:" port "/ws")))))
+              port (parse-port-arg (:config config-result))]
+        (start-server! port))
       (p/catch (fn [err]
                  (js/console.error "Failed to start server:" (ex-message err))
                  (js/process.exit 1)))))

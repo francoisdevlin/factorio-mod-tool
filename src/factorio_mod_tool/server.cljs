@@ -12,7 +12,9 @@
             [factorio-mod-tool.analysis.lint :as lint]
             [factorio-mod-tool.rcon.client :as rcon]
             [factorio-mod-tool.bundle.pack :as pack]
-            [factorio-mod-tool.repl :as repl]))
+            [factorio-mod-tool.repl :as repl]
+            [factorio-mod-tool.http.server :as http-server]
+            [factorio-mod-tool.util.config :as config]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool definitions
@@ -240,9 +242,27 @@
                               nil))]
         (json-rpc/handle-message context message)))))
 
+(defn- parse-port-arg
+  "Parse --port flag from argv, falling back to config or default 3000."
+  [config]
+  (let [args (vec (drop 2 (.-argv js/process)))
+        port-idx (.indexOf args "--port")
+        arg-port (when (and (>= port-idx 0) (< (inc port-idx) (count args)))
+                   (js/parseInt (nth args (inc port-idx))))]
+    (or arg-port
+        (get-in config [:http :port])
+        3000)))
+
 (defn main [& _args]
   (js/process.stdin.setEncoding "utf8")
   (js/process.stdout.setEncoding "utf8")
   (js/process.stdin.on "data" handle-stdin-data)
   (js/process.stdin.on "end" (fn [] (js/process.exit 0)))
-  (js/process.stderr.write "factorio-mod-tool MCP server started\n"))
+  (js/process.stderr.write "factorio-mod-tool MCP server started\n")
+  ;; Start the HTTP+WS server alongside the MCP stdio transport
+  (-> (p/let [config-result (-> (config/read-config)
+                                (p/catch (fn [_] {:config {} :config-path nil})))
+              port (parse-port-arg (:config config-result))]
+        (http-server/start-server! port))
+      (p/catch (fn [err]
+                 (js/process.stderr.write (str "Warning: HTTP server failed to start: " (ex-message err) "\n"))))))
