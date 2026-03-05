@@ -5,11 +5,13 @@
 
 (defonce app-db
   (r/atom
-   {:navigation {:section       :projects
-                 :selected-file nil
-                 :file-content  nil
-                 :file-loading? false
-                 :file-meta     nil}
+   {:navigation {:section        :projects
+                 :selected-file  nil
+                 :file-content   nil
+                 :file-loading?  false
+                 :file-meta      nil
+                 :file-type      :text
+                 :file-mime-type nil}
 
     :server {:status           nil
              :capabilities     nil

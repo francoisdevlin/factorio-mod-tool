@@ -41,7 +41,9 @@
                (assoc-in [:navigation :selected-file] path)
                (assoc-in [:navigation :file-content] nil)
                (assoc-in [:navigation :file-loading?] true)
-               (assoc-in [:navigation :file-meta] nil))))
+               (assoc-in [:navigation :file-meta] nil)
+               (assoc-in [:navigation :file-type] :text)
+               (assoc-in [:navigation :file-mime-type] nil))))
   (dispatch! [:cmd/read-file path]))
 
 (defmethod handle-event :set-file-content [[_ content meta]]
@@ -51,6 +53,17 @@
                (assoc-in [:navigation :file-content] content)
                (assoc-in [:navigation :file-loading?] false)
                (assoc-in [:navigation :file-meta] meta)))))
+
+(defmethod handle-event :set-file-data [[_ data]]
+  (swap! db/app-db
+         (fn [db]
+           (-> db
+               (assoc-in [:navigation :file-content] (:content data))
+               (assoc-in [:navigation :file-loading?] false)
+               (assoc-in [:navigation :file-type] (keyword (or (:file-type data) "text")))
+               (assoc-in [:navigation :file-mime-type] (:mime-type data))
+               (assoc-in [:navigation :file-meta] {:mtime (:mtime data)
+                                                    :size  (:size data)})))))
 
 (defmethod handle-event :toggle-tree-node [[_ path]]
   (swap! db/app-db update :file-tree
@@ -225,13 +238,11 @@
 (defmethod handle-event :cmd/read-file [[_ path]]
   (-> (ws/send-command! "POST" "/api/project/read-file" {:path path})
       (.then (fn [res]
-               (dispatch! [:set-file-content
-                           (:content res)
-                           {:mtime (:mtime res) :size (:size res)}])))
+               (dispatch! [:set-file-data res])))
       (.catch (fn [err]
-                (dispatch! [:set-file-content
-                            (str "Error loading file: " (.-message err))
-                            nil])))))
+                (dispatch! [:set-file-data
+                            {:content   (str "Error loading file: " (.-message err))
+                             :file-type "text"}])))))
 
 (defmethod handle-event :cmd/fetch-initial-data [_]
   ;; Server status

@@ -389,13 +389,27 @@
 
    (command
     "read-file"
-    "Read the contents of a file in the currently opened project. Takes a relative path and returns the file content with metadata."
+    "Read the contents of a file in the currently opened project. Takes a relative path and returns the file content with metadata. Images return base64 data; binary files return a placeholder."
     {:type       "object"
      :properties {:path {:type        "string"
                          :description "Relative file path within the project directory"}}
      :required   ["path"]}
     (fn [{:keys [path]}]
-      (let [project-path (state/current-project-path)]
+      (let [project-path (state/current-project-path)
+            ext          (let [dot-idx (.lastIndexOf path ".")]
+                           (when (pos? dot-idx)
+                             (.toLowerCase (.substring path dot-idx))))
+            image-exts   #{".png" ".jpg" ".jpeg" ".gif" ".bmp" ".svg" ".ico" ".webp"}
+            binary-exts  #{".zip" ".tar" ".gz" ".dat" ".bin" ".exe" ".dll" ".so"
+                           ".woff" ".woff2" ".ttf" ".otf" ".mp3" ".wav" ".ogg"
+                           ".mp4" ".avi" ".mov"}
+            ext->mime    {".png" "image/png" ".jpg" "image/jpeg" ".jpeg" "image/jpeg"
+                          ".gif" "image/gif" ".bmp" "image/bmp" ".svg" "image/svg+xml"
+                          ".ico" "image/x-icon" ".webp" "image/webp"}
+            file-type    (cond
+                           (contains? image-exts ext) :image
+                           (contains? binary-exts ext) :binary
+                           :else :text)]
         (if-not project-path
           (p/rejected (ex-info "No project open" {}))
           (let [abs-path   (fs/resolve-path project-path path)
@@ -403,12 +417,18 @@
             ;; Prevent path traversal outside project directory
             (if-not (.startsWith normalized project-path)
               (p/rejected (ex-info "Path outside project directory" {:path path}))
-              (-> (p/let [content (fs/read-file abs-path)
-                          st      (fs/stat abs-path)]
-                    {:path    path
-                     :content content
-                     :mtime   (.toISOString (.-mtime st))
-                     :size    (.-size st)})
+              (-> (p/let [st (fs/stat abs-path)
+                          content (case file-type
+                                    :image  (fs/read-file-base64 abs-path)
+                                    :binary nil
+                                    (fs/read-file abs-path))]
+                    (cond-> {:path      path
+                             :file-type (name file-type)
+                             :mtime     (.toISOString (.-mtime st))
+                             :size      (.-size st)}
+                      (= file-type :text)  (assoc :content content)
+                      (= file-type :image) (assoc :content content
+                                                  :mime-type (get ext->mime ext "image/png"))))
                   (p/catch (fn [err]
                              (throw (ex-info (str "Failed to read file: " (ex-message err))
                                              {:path path})))))))))))])
