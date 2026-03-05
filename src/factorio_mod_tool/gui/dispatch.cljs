@@ -139,11 +139,21 @@
             node))
         tree))
 
+(defn- normalize-tree-types
+  "Ensure :type values are keywords in tree nodes.
+   JSON serialization through WebSocket converts keywords to strings."
+  [tree]
+  (mapv (fn [node]
+          (cond-> (update node :type keyword)
+            (:children node)
+            (update :children normalize-tree-types)))
+        tree))
+
 (defmethod handle-event :server/project [[_ data]]
   (swap! db/app-db
          (fn [db]
            (let [old-tree (:file-tree db)
-                 new-tree (or (:file-tree data) [])
+                 new-tree (normalize-tree-types (or (:file-tree data) []))
                  expanded-paths (collect-expanded-paths old-tree)
                  merged-tree (if (seq expanded-paths)
                                (apply-expanded-state new-tree expanded-paths)
