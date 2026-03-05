@@ -4,7 +4,9 @@
    State changes are validated against specs (dev mode) and broadcast to WS clients."
   (:require [promesa.core :as p]
             [factorio-mod-tool.spec :as spec]
-            [factorio-mod-tool.util.fs :as fs]))
+            [factorio-mod-tool.util.fs :as fs]
+            [factorio-mod-tool.util.mod :as mod]
+            [factorio-mod-tool.util.config :as config]))
 
 ;; ---------------------------------------------------------------------------
 ;; Preferences persistence
@@ -97,7 +99,8 @@
   (fn [_key _ref old-state new-state]
     (when (not= (:project old-state) (:project new-state))
       (broadcast! {:type "state-change" :key "project"
-                   :data (:project new-state)}))
+                   :data (select-keys (:project new-state)
+                                      [:current-path :config :file-tree])}))
     (when (not= (:connection old-state) (:connection new-state))
       (broadcast! {:type "state-change" :key "connection"
                    :data (update (:connection new-state) :instances
@@ -184,6 +187,97 @@
   "Set a single preference key-value pair."
   [k v]
   (swap! app-state assoc-in [:preferences k] v))
+
+;; ---------------------------------------------------------------------------
+;; Project open
+;; ---------------------------------------------------------------------------
+
+(defn- build-file-tree
+  "Build a nested tree structure from a flat list of relative file paths.
+   Each node: {:name, :path, :type (:file/:dir), :children}."
+  [base-path files]
+  (let [tree (atom {})]
+    ;; Build a nested map: {"dir" {:children {"file.lua" {:leaf true}}}}
+    (doseq [f files]
+      (let [parts (.split f "/")]
+        (loop [parts (vec parts)
+               path-acc base-path
+               cursor []]
+          (when (seq parts)
+            (let [part (first parts)
+                  full-path (fs/join path-acc part)
+                  new-cursor (conj cursor part)]
+              (if (= 1 (count parts))
+                ;; leaf file
+                (swap! tree assoc-in (conj new-cursor ::leaf) true)
+                ;; directory
+                (do
+                  (swap! tree update-in new-cursor #(or % {}))
+                  (recur (rest parts) full-path new-cursor))))))))
+    ;; Convert nested map to tree nodes
+    (letfn [(map->nodes [m parent-path]
+              (->> (dissoc m ::leaf)
+                   (sort-by key)
+                   (mapv (fn [[name children]]
+                           (let [full-path (fs/join parent-path name)]
+                             (if (and (::leaf children) (= 1 (count children)))
+                               {:name name :path full-path :type :file}
+                               {:name name :path full-path :type :dir
+                                :expanded? false
+                                :children (map->nodes children full-path)}))))))]
+      (map->nodes @tree base-path))))
+
+(defn open-project!
+  "Open a project directory. Reads .fmod.json config, lists files, updates state.
+   Returns a promise of the project info map."
+  [project-path]
+  (p/let [abs-path (fs/resolve-path project-path)
+          config-result (-> (config/read-config abs-path)
+                            (p/catch (fn [_] {:config nil :config-path nil})))
+          {:keys [config config-path]} config-result
+          ;; Determine mod source path
+          src-dir (if config
+                    (get-in config [:structure :src] "src")
+                    "src")
+          mod-path (fs/join abs-path src-dir)
+          ;; Read mod data from src dir (best effort)
+          mod-data (-> (mod/read-mod-dir mod-path)
+                       (p/catch (fn [_] {:path mod-path :info nil :files []})))
+          ;; List all project files for the file tree
+          all-files (-> (fs/list-files-recursive abs-path)
+                        (p/catch (fn [_] [])))
+          file-tree (build-file-tree abs-path all-files)]
+    ;; Update app state
+    (swap! app-state
+           (fn [state]
+             (-> state
+                 (assoc-in [:project :current-path] abs-path)
+                 (assoc-in [:project :config] config)
+                 (assoc-in [:project :config-path] config-path)
+                 (assoc-in [:project :file-tree] file-tree)
+                 (assoc-in [:project :mods mod-path] mod-data))))
+    {:path        abs-path
+     :config      config
+     :config-path config-path
+     :mod-path    mod-path
+     :file-tree   file-tree
+     :mod-data    mod-data}))
+
+(defn current-project-path
+  "Returns the current project path, or nil if no project is open."
+  []
+  (get-in @app-state [:project :current-path]))
+
+(defn current-mod-path
+  "Returns the mod source path for the current project.
+   Falls back to config structure.src or 'src' default."
+  []
+  (when-let [project-path (current-project-path)]
+    (let [config (get-in @app-state [:project :config])
+          src-dir (if config
+                    (get-in config [:structure :src] "src")
+                    "src")]
+      (fs/join project-path src-dir))))
 
 ;; ---------------------------------------------------------------------------
 ;; Initialization

@@ -38,6 +38,12 @@
               "rcon-state"
               (dispatch/dispatch! [:server/rcon-state msg])
 
+              "state-change"
+              (case (:key msg)
+                "project"    (dispatch/dispatch! [:server/project (:data msg)])
+                "connection" nil ;; already handled by rcon-health/rcon-state
+                nil)
+
               nil))))
 
 (defn- ws-url []

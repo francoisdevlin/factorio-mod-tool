@@ -17,6 +17,9 @@
              :pipeline-status  nil
              :pipeline-results {}}
 
+    :project {:current-path nil
+              :config       nil}
+
     :connection-status :disconnected
     :current-theme     "factorio"
     :file-tree         []

@@ -36,7 +36,10 @@
    {:command "rcon-stop-heartbeat"  :method :post :path "/api/rcon/heartbeat/stop"}
    ;; RCON query protocol
    {:command "rcon-query"         :method :post :path "/api/rcon/query"}
-   {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}])
+   {:command "rcon-query-catalog" :method :get  :path "/api/rcon/query/catalog"}
+   ;; Project
+   {:command "open-project"      :method :post :path "/api/project/open"}
+   {:command "get-project"       :method :get  :path "/api/project"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers
