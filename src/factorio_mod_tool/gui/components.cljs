@@ -202,6 +202,79 @@
            [:p.theme-option-desc desc]])]]]]))
 
 ;; ---------------------------------------------------------------------------
+;; Connection dashboard
+;; ---------------------------------------------------------------------------
+
+(def ^:private stale-threshold-ms
+  "Connections with no query in this many ms are considered stale."
+  30000)
+
+(defn- relative-time
+  "Returns a human-readable relative time string for an ISO timestamp."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))
+          diff (- now then)
+          secs (Math/floor (/ diff 1000))
+          mins (Math/floor (/ secs 60))]
+      (cond
+        (< secs 5)  "just now"
+        (< secs 60) (str secs " seconds ago")
+        (< mins 60) (str mins " minute" (when (not= mins 1) "s") " ago")
+        :else       (str (Math/floor (/ mins 60)) " hour"
+                         (when (not= (Math/floor (/ mins 60)) 1) "s") " ago")))))
+
+(defn- stale?
+  "Returns true if the last query was more than stale-threshold-ms ago."
+  [iso-str]
+  (when iso-str
+    (let [then (.getTime (js/Date. iso-str))
+          now  (.getTime (js/Date.))]
+      (> (- now then) stale-threshold-ms))))
+
+(defn- connection-card
+  "Renders a single RCON connection card with last query time."
+  [{:keys [instance host port last-query-at]}]
+  (let [is-stale (stale? last-query-at)]
+    [:div.connection-card {:class (when is-stale "stale")}
+     [:div.connection-header
+      [:span.connection-dot {:class (if is-stale "stale" "active")}]
+      [:strong instance]]
+     [:div.connection-details
+      [:div (str host ":" port)]
+      [:div.last-query
+       {:class (when is-stale "stale")}
+       (if last-query-at
+         (str "Last query: " (relative-time last-query-at))
+         "No queries yet")]]]))
+
+(defn connection-panel []
+  (let [tick (r/atom 0)
+        interval-id (atom nil)]
+    (r/create-class
+     {:component-did-mount
+      (fn [_]
+        (reset! interval-id
+                (js/setInterval #(swap! tick inc) 1000)))
+      :component-will-unmount
+      (fn [_]
+        (when @interval-id
+          (js/clearInterval @interval-id)))
+      :reagent-render
+      (fn []
+        (let [_ @tick
+              conns @state/rcon-connections]
+          [:div.connection-panel
+           [:div.panel-header "RCON Connections"]
+           (if (empty? conns)
+             [:div.empty-state "No RCON connections"]
+             [:div.connection-grid
+              (for [conn conns]
+                ^{:key (:instance conn)}
+                [connection-card conn])])]))})))
+
+;; ---------------------------------------------------------------------------
 ;; Section routing
 ;; ---------------------------------------------------------------------------
 
@@ -211,7 +284,7 @@
                  [file-tree-panel]
                  [center-panel]
                  [diagnostics-panel]]
-    :connection [placeholder-panel "Connection" "RCON connection status dashboard"]
+    :connection [connection-panel]
     :prototypes [placeholder-panel "Prototypes" "Browse and inspect all prototypes"]
     :blueprints [placeholder-panel "Blueprints" "Blueprint lab viewer"]
     :tech-tree  [placeholder-panel "Tech Tree" "Technology tree viewer"]

@@ -34,3 +34,6 @@
 
 ;; Current theme: "dark" (default), "light", or "factorio"
 (defonce current-theme (r/atom "dark"))
+
+;; RCON connections: vector of {:instance, :host, :port, :last-query-at}
+(defonce rcon-connections (r/atom []))
