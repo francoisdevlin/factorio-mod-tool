@@ -5,6 +5,7 @@
 .clj-kondo/.cache/
 .beads/
 .nrepl-port
+.shadow-cljs/
 node_modules/
 out/
 target/
