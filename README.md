@@ -204,7 +204,7 @@ The MCP server exposes the same functionality to AI coding assistants (e.g., Cla
 node out/server.js
 ```
 
-Available MCP tools: `validate-mod`, `parse-lua`, `lint-mod`, `run-tests`, `pack-mod`, `rcon-exec`, `rcon-inspect`.
+Available MCP tools: `validate-mod`, `parse-lua`, `lint-mod`, `pack-mod`, `rcon-exec`, `rcon-inspect`, `repl-eval`, `repl-history`, `repl-inspect`.
 
 ## Tech Stack
 
