@@ -4,7 +4,13 @@
             [factorio-mod-tool.gui.state :as state]
             [factorio-mod-tool.gui.dispatch :as dispatch]
             ["highlight.js/lib/core" :as hljs]
-            ["highlight.js/lib/languages/lua" :as lua-lang]))
+            ["highlight.js/lib/languages/lua" :as lua-lang]
+            ["highlight.js/lib/languages/json" :as json-lang]
+            ["highlight.js/lib/languages/ini" :as ini-lang]
+            ["highlight.js/lib/languages/markdown" :as markdown-lang]
+            ["highlight.js/lib/languages/xml" :as xml-lang]
+            ["highlight.js/lib/languages/javascript" :as js-lang]
+            ["highlight.js/lib/languages/plaintext" :as plaintext-lang]))
 
 ;; ---------------------------------------------------------------------------
 ;; Top bar
@@ -126,17 +132,85 @@
        [tree-node node 0]))])
 
 ;; ---------------------------------------------------------------------------
-;; Center panel (file viewer)
+;; Highlight.js language registration
 ;; ---------------------------------------------------------------------------
+
+(.registerLanguage hljs "lua" lua-lang)
+(.registerLanguage hljs "json" json-lang)
+(.registerLanguage hljs "ini" ini-lang)
+(.registerLanguage hljs "markdown" markdown-lang)
+(.registerLanguage hljs "xml" xml-lang)
+(.registerLanguage hljs "javascript" js-lang)
+(.registerLanguage hljs "plaintext" plaintext-lang)
+
+(def ^:private ext->language
+  "Map file extensions to highlight.js language names."
+  {".lua"  "lua"
+   ".json" "json"
+   ".cfg"  "ini"
+   ".ini"  "ini"
+   ".md"   "markdown"
+   ".xml"  "xml"
+   ".html" "xml"
+   ".js"   "javascript"
+   ".cljs" "javascript"
+   ".clj"  "javascript"
+   ".edn"  "javascript"
+   ".txt"  "plaintext"})
+
+(defn- detect-language
+  "Detect highlight.js language from a file path extension."
+  [path]
+  (when path
+    (let [dot-idx (.lastIndexOf path ".")]
+      (when (pos? dot-idx)
+        (let [ext (.substring path dot-idx)]
+          (get ext->language (.toLowerCase ext) "plaintext"))))))
+
+;; ---------------------------------------------------------------------------
+;; Center panel (file viewer with syntax highlighting)
+;; ---------------------------------------------------------------------------
+
+(defn- highlighted-code
+  "Renders file content with syntax highlighting using highlight.js.
+   Re-highlights when content or selected file changes."
+  []
+  (let [code-ref (atom nil)
+        highlight! (fn []
+                     (when-let [el @code-ref]
+                       (let [content @state/file-content
+                             lang    (detect-language @state/selected-file)]
+                         (when content
+                           (set! (.-className el) (str "language-" (or lang "plaintext")))
+                           (set! (.-textContent el) content)
+                           (.removeAttribute el "data-highlighted")
+                           (.highlightElement hljs el)))))]
+    (r/create-class
+     {:component-did-mount  (fn [_] (highlight!))
+      :component-did-update (fn [_] (highlight!))
+      :reagent-render
+      (fn []
+        @state/file-content
+        @state/selected-file
+        [:pre.file-code-block
+         [:code {:ref #(reset! code-ref %)}]])})))
 
 (defn center-panel []
   [:div.center-panel
    (if @state/selected-file
-     [:<>
-      [:div.file-tab-bar
-       [:div.file-tab.active @state/selected-file]]
-      [:div.file-content
-       (or @state/file-content "Select a file to view its contents.")]]
+     (let [meta     @state/file-meta
+           loading? @state/file-loading?]
+       [:<>
+        [:div.file-tab-bar
+         [:div.file-tab.active
+          @state/selected-file
+          (when (:mtime meta)
+            [:span.file-tab-mtime (relative-time (:mtime meta))])]]
+        [:div.file-content
+         (cond
+           loading?              [:div.file-loading "Loading..."]
+           @state/file-content   [highlighted-code]
+           :else                 [:div.empty-state "Select a file to view its contents."])]])
      [:div.empty-state "Select a file from the tree to view"])])
 
 ;; ---------------------------------------------------------------------------
@@ -173,8 +247,6 @@
 ;; ---------------------------------------------------------------------------
 ;; Lua code preview (highlight.js)
 ;; ---------------------------------------------------------------------------
-
-(.registerLanguage hljs "lua" lua-lang)
 
 (def sample-lua
   "-- Factorio mod: data stage
