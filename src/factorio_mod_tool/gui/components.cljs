@@ -227,7 +227,7 @@ end)")
        [code-preview]]]]))
 
 ;; ---------------------------------------------------------------------------
-;; Connection dashboard
+;; Connection dashboard — hero/secondary layout
 ;; ---------------------------------------------------------------------------
 
 (defn- relative-time
@@ -260,64 +260,6 @@ end)")
         (< mins 60) (str mins "m " (mod secs 60) "s")
         :else       (str hrs "h " (mod mins 60) "m")))))
 
-(defn- status-dot-class [status]
-  (case status
-    (:ok :alive :connected :running :available) "ok"
-    (:error :unreachable :disconnected)          "error"
-    (:warning :timeout :stale)                   "warning"
-    "unknown"))
-
-(defn- dashboard-card
-  "Generic dashboard card with status dot, title, and child content."
-  [status title & children]
-  [:div.dashboard-card
-   [:div.dashboard-card-header
-    [:span.dashboard-dot {:class (status-dot-class status)}]
-    [:span.dashboard-card-title title]]
-   (into [:div.dashboard-card-body] children)])
-
-(defn- http-server-card []
-  (let [server @state/server-status]
-    [dashboard-card
-     (if server :ok :disconnected)
-     "HTTP Server"
-     (if server
-       [:<>
-        [:div.dashboard-detail
-         [:span.detail-label "Status"]
-         [:span.detail-value "Running"]]
-        (when (:port server)
-          [:div.dashboard-detail
-           [:span.detail-label "Port"]
-           [:span.detail-value (str (:port server))]])
-        (when (:started-at server)
-          [:div.dashboard-detail
-           [:span.detail-label "Uptime"]
-           [:span.detail-value (uptime-str (:started-at server))]])
-        [:div.dashboard-detail
-         [:span.detail-label "Version"]
-         [:span.detail-value (or (:version server) "?")]]]
-       [:div.dashboard-empty "Not connected"])]))
-
-(defn- websocket-card []
-  (let [ws-status @state/connection-status
-        server    @state/server-status
-        clients   (or (:ws-client-count server) 0)]
-    [dashboard-card
-     ws-status
-     "WebSocket"
-     [:div.dashboard-detail
-      [:span.detail-label "Status"]
-      [:span.detail-value {:class (name ws-status)}
-       (case ws-status
-         :connected    "Connected"
-         :disconnected "Disconnected"
-         :error        "Error"
-         "Unknown")]]
-     [:div.dashboard-detail
-      [:span.detail-label "Clients"]
-      [:span.detail-value (str clients)]]]))
-
 (defn- health-class [health]
   (case health
     "alive"       "ok"
@@ -325,80 +267,149 @@ end)")
     "timeout"     "warning"
     "unknown"))
 
-(defn- rcon-card [{:keys [instance host port last-query-at]} health-info]
-  (let [health (or (:health health-info) "unknown")]
-    [dashboard-card
-     (keyword (health-class health))
-     (str "RCON: " instance)
-     [:div.dashboard-detail
-      [:span.detail-label "Host"]
-      [:span.detail-value (str host ":" port)]]
-     [:div.dashboard-detail
-      [:span.detail-label "Health"]
-      [:span.detail-value {:class (health-class health)}
-       (case health
-         "alive"       "Alive"
-         "unreachable" "Unreachable"
-         "timeout"     "Timeout"
-         "Unknown")]]
-     [:div.dashboard-detail
-      [:span.detail-label "Last Query"]
-      [:span.detail-value
-       (if last-query-at (relative-time last-query-at) "Never")]]
-     (when (:last-heartbeat-at health-info)
-       [:div.dashboard-detail
-        [:span.detail-label "Heartbeat"]
-        [:span.detail-value (relative-time (:last-heartbeat-at health-info))]])
-     (when (pos? (or (:failures health-info) 0))
-       [:div.dashboard-detail
-        [:span.detail-label "Failures"]
-        [:span.detail-value.error (str (:failures health-info))]])]))
+(defn- hero-status-class [health]
+  (case health
+    "alive"       "hero-connected"
+    "unreachable" "hero-disconnected"
+    "timeout"     "hero-stale"
+    "hero-unknown"))
 
-(defn- capabilities-card []
+;; --- Hero Section: Primary RCON Connection ---
+
+(defn- hero-rcon-panel
+  "Large, prominent display for the primary Factorio RCON connection."
+  [conn health-info]
+  (let [health  (or (:health health-info) "unknown")
+        {:keys [instance host port last-query-at]} conn]
+    [:div.hero-connection {:class (hero-status-class health)}
+     [:div.hero-status-row
+      [:div.hero-status-indicator {:class (health-class health)}]
+      [:span.hero-status-label
+       (case health
+         "alive"       "Connected"
+         "unreachable" "Disconnected"
+         "timeout"     "Stale"
+         "Unknown")]]
+     [:div.hero-instance-name (or instance "Factorio")]
+     [:div.hero-host (str host ":" port)]
+     [:div.hero-details
+      (when (:last-heartbeat-at health-info)
+        [:div.hero-detail
+         [:span.hero-detail-label "Last Heartbeat"]
+         [:span.hero-detail-value (relative-time (:last-heartbeat-at health-info))]])
+      [:div.hero-detail
+       [:span.hero-detail-label "Last Query"]
+       [:span.hero-detail-value
+        (if last-query-at (relative-time last-query-at) "Never")]]
+      (when (pos? (or (:failures health-info) 0))
+        [:div.hero-detail.hero-failures
+         [:span.hero-detail-label "Failures"]
+         [:span.hero-detail-value (str (:failures health-info))]])]]))
+
+(defn- hero-no-connection []
+  [:div.hero-connection.hero-unknown
+   [:div.hero-status-row
+    [:div.hero-status-indicator.unknown]
+    [:span.hero-status-label "No Connection"]]
+   [:div.hero-instance-name "Factorio"]
+   [:div.hero-host "Not configured"]
+   [:div.hero-hint "Configure an RCON connection to connect to Factorio"]])
+
+;; --- RCON Instances List (multi-instance) ---
+
+(defn- rcon-instance-row
+  "Compact row for a secondary RCON instance."
+  [conn health-info]
+  (let [health (or (:health health-info) "unknown")
+        {:keys [instance host port last-query-at]} conn]
+    [:div.rcon-row
+     [:span.rcon-row-dot {:class (health-class health)}]
+     [:span.rcon-row-name instance]
+     [:span.rcon-row-host (str host ":" port)]
+     [:span.rcon-row-activity
+      (if last-query-at (relative-time last-query-at) "No activity")]]))
+
+;; --- Collapsible Section ---
+
+(defn- collapsible-section
+  "A section with a clickable header that toggles visibility."
+  [title expanded? on-toggle & children]
+  [:div.collapsible-section
+   [:div.collapsible-header {:on-click on-toggle}
+    [:span.collapsible-chevron (if expanded? "\u25BE" "\u25B8")]
+    [:span.collapsible-title title]]
+   (when expanded?
+     (into [:div.collapsible-body] children))])
+
+;; --- Toolchain Health ---
+
+(defn- toolchain-health []
   (let [caps @state/capabilities]
-    [dashboard-card
-     (if (and caps (some (fn [[_ v]] (:available v)) caps)) :ok :warning)
-     "Capabilities"
+    [:div.toolchain-checklist
      (if (seq caps)
        (for [[k v] caps]
          ^{:key k}
-         [:div.dashboard-detail
-          [:span.detail-label k]
-          [:span.detail-value {:class (if (:available v) "ok" "error")}
-           (if (:available v) "Available" "Missing")]])
-       [:div.dashboard-empty "Detecting..."])]))
+         [:div.toolchain-item
+          [:span.toolchain-icon {:class (if (:available v) "ok" "error")}
+           (if (:available v) "\u2713" "\u2717")]
+          [:span.toolchain-label k]])
+       [:div.toolchain-detecting "Detecting capabilities..."])]))
 
-(defn- pipeline-card []
-  (let [current @state/pipeline-status
-        results @state/pipeline-results
-        targets ["check" "lint" "test" "pack"]]
-    [dashboard-card
-     (cond
-       (and current (= :running (:status current))) :warning
-       (some #(= :error (:status (get results %))) targets) :error
-       (some #(get results %) targets) :ok
-       :else :unknown)
-     "Pipeline"
-     (for [target targets]
-       (let [result (get results target)]
-         ^{:key target}
-         [:div.dashboard-detail
-          [:span.detail-label target]
-          [:span.detail-value
-           {:class (cond
-                     (and current (= target (:target current)) (= :running (:status current))) "warning"
-                     (= :ok (:status result)) "ok"
-                     (= :error (:status result)) "error"
-                     :else "")}
-           (cond
-             (and current (= target (:target current)) (= :running (:status current))) "Running..."
-             (= :ok (:status result)) "Passed"
-             (= :error (:status result)) "Failed"
-             :else "Not run")]]))]))
+;; --- Server Internals ---
+
+(defn- server-internals []
+  (let [server    @state/server-status
+        ws-status @state/connection-status
+        ws-clients (or (:ws-client-count @state/server-status) 0)
+        current   @state/pipeline-status
+        results   @state/pipeline-results
+        targets   ["check" "lint" "test" "pack"]]
+    [:div.server-internals
+     ;; HTTP
+     [:div.internals-group
+      [:div.internals-group-title "HTTP Server"]
+      (if server
+        [:div.internals-details
+         [:span.internals-badge.ok "Running"]
+         (when (:port server)
+           [:span.internals-meta (str ":" (:port server))])
+         (when (:started-at server)
+           [:span.internals-meta (str "up " (uptime-str (:started-at server)))])]
+        [:div.internals-details
+         [:span.internals-badge.error "Stopped"]])]
+     ;; WebSocket
+     [:div.internals-group
+      [:div.internals-group-title "WebSocket"]
+      [:div.internals-details
+       [:span.internals-badge {:class (name ws-status)}
+        (case ws-status
+          :connected    "Connected"
+          :disconnected "Disconnected"
+          :error        "Error"
+          "Unknown")]
+       [:span.internals-meta (str ws-clients " client" (when (not= ws-clients 1) "s"))]]]
+     ;; Pipeline
+     [:div.internals-group
+      [:div.internals-group-title "Pipeline"]
+      [:div.pipeline-summary
+       (for [target targets]
+         (let [result (get results target)]
+           ^{:key target}
+           [:span.pipeline-target
+            {:class (cond
+                      (and current (= target (:target current)) (= :running (:status current))) "warning"
+                      (= :ok (:status result)) "ok"
+                      (= :error (:status result)) "error"
+                      :else "idle")}
+            target]))]]]))
+
+;; --- Main Connection Panel ---
 
 (defn connection-panel []
-  (let [tick (r/atom 0)
-        interval-id (atom nil)]
+  (let [tick              (r/atom 0)
+        interval-id       (atom nil)
+        toolchain-open?   (r/atom false)
+        internals-open?   (r/atom false)]
     (r/create-class
      {:component-did-mount
       (fn [_]
@@ -412,19 +423,30 @@ end)")
       (fn []
         (let [_          @tick
               conns      @state/rcon-connections
-              health-map @state/rcon-health]
+              health-map @state/rcon-health
+              primary    (first conns)
+              secondary  (rest conns)]
           [:div.connection-dashboard
-           [:div.panel-header "Connection Status"]
-           [:div.dashboard-grid
-            [http-server-card]
-            [websocket-card]
-            (for [conn conns]
-              ^{:key (:instance conn)}
-              [rcon-card conn (get health-map (:instance conn))])
-            [capabilities-card]
-            [pipeline-card]]
-           (when (empty? conns)
-             [:div.dashboard-hint "No RCON connections configured"])]))})))
+           [:div.panel-header "Connection Health"]
+           ;; Hero section
+           [:div.hero-section
+            (if primary
+              [hero-rcon-panel primary (get health-map (:instance primary))]
+              [hero-no-connection])]
+           ;; Secondary RCON instances (if any)
+           (when (seq secondary)
+             [:div.rcon-instances
+              [:div.rcon-instances-header "Other Instances"]
+              (for [conn secondary]
+                ^{:key (:instance conn)}
+                [rcon-instance-row conn (get health-map (:instance conn))])])
+           ;; Collapsible diagnostics sections
+           [collapsible-section "Toolchain Health" @toolchain-open?
+            #(swap! toolchain-open? not)
+            [toolchain-health]]
+           [collapsible-section "Server Internals" @internals-open?
+            #(swap! internals-open? not)
+            [server-internals]]]))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Section routing
