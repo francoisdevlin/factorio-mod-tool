@@ -29,6 +29,9 @@
 ;; Pipeline status: nil or {:target, :status (:running/:ok/:error)}
 (defonce pipeline-status (r/atom nil))
 
+;; Pipeline results history: map of target -> {:status, :timestamp}
+(defonce pipeline-results (r/atom {}))
+
 ;; Active navigation section
 (defonce active-section (r/atom :projects))
 

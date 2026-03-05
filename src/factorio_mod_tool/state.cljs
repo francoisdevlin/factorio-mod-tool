@@ -80,6 +80,10 @@
 ;; Set of clients that have subscribed to the live event stream
 (defonce ws-subscribers (atom #{}))
 
+;; Server metadata (set at startup)
+(defonce server-port (atom nil))
+(defonce server-started-at (atom nil))
+
 ;; User preferences (theme, etc.)
 (defonce preferences (atom {:theme "factorio"}))
 

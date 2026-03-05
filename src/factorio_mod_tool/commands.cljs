@@ -157,6 +157,9 @@
        {:server           "factorio-mod-tool"
         :version          "0.1.0"
         :status           "running"
+        :port             @state/server-port
+        :started-at       @state/server-started-at
+        :ws-client-count  (count @state/ws-clients)
         :rcon-connections  (mapv (fn [[k v]]
                                   {:instance       k
                                    :host           (:host v)

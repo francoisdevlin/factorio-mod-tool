@@ -30,9 +30,13 @@
                         (.then (fn [res]
                                  (when-let [diags (:diagnostics res)]
                                    (reset! state/diagnostics diags))
-                                 (reset! state/pipeline-status {:target target :status :ok})))
+                                 (reset! state/pipeline-status {:target target :status :ok})
+                                 (swap! state/pipeline-results assoc target
+                                        {:status :ok :timestamp (.toISOString (js/Date.))})))
                         (.catch (fn [_err]
-                                  (reset! state/pipeline-status {:target target :status :error})))))}
+                                  (reset! state/pipeline-status {:target target :status :error})
+                                  (swap! state/pipeline-results assoc target
+                                         {:status :error :timestamp (.toISOString (js/Date.))})))))}
        target])]
    [:div.status-indicators
     [status-indicator "Server" @state/connection-status]
@@ -259,24 +263,6 @@ end)")
 ;; Connection dashboard
 ;; ---------------------------------------------------------------------------
 
-(defn- health-class [health]
-  (case health
-    "alive"       "health-alive"
-    "unreachable" "health-unreachable"
-    "timeout"     "health-timeout"
-    "health-unknown"))
-
-(defn- health-label [health]
-  (case health
-    "alive"       "Alive"
-    "unreachable" "Unreachable"
-    "timeout"     "Timeout"
-    "Unknown"))
-
-(def ^:private stale-threshold-ms
-  "Connections with no query in this many ms are considered stale."
-  30000)
-
 (defn- relative-time
   "Returns a human-readable relative time string for an ISO timestamp."
   [iso-str]
@@ -285,44 +271,163 @@ end)")
           now  (.getTime (js/Date.))
           diff (- now then)
           secs (Math/floor (/ diff 1000))
-          mins (Math/floor (/ secs 60))]
+          mins (Math/floor (/ secs 60))
+          hrs  (Math/floor (/ mins 60))]
       (cond
         (< secs 5)  "just now"
-        (< secs 60) (str secs " seconds ago")
-        (< mins 60) (str mins " minute" (when (not= mins 1) "s") " ago")
-        :else       (str (Math/floor (/ mins 60)) " hour"
-                         (when (not= (Math/floor (/ mins 60)) 1) "s") " ago")))))
+        (< secs 60) (str secs "s ago")
+        (< mins 60) (str mins "m ago")
+        :else       (str hrs "h " (mod mins 60) "m ago")))))
 
-(defn- stale?
-  "Returns true if the last query was more than stale-threshold-ms ago."
+(defn- uptime-str
+  "Returns a human-readable uptime from an ISO start time."
   [iso-str]
   (when iso-str
     (let [then (.getTime (js/Date. iso-str))
-          now  (.getTime (js/Date.))]
-      (> (- now then) stale-threshold-ms))))
+          now  (.getTime (js/Date.))
+          secs (Math/floor (/ (- now then) 1000))
+          mins (Math/floor (/ secs 60))
+          hrs  (Math/floor (/ mins 60))]
+      (cond
+        (< secs 60) (str secs "s")
+        (< mins 60) (str mins "m " (mod secs 60) "s")
+        :else       (str hrs "h " (mod mins 60) "m")))))
 
-(defn- connection-card
-  "Renders a single RCON connection card with last query time and health."
-  [{:keys [instance host port last-query-at]} health-info]
-  (let [is-stale (stale? last-query-at)
-        health   (or (:health health-info) "unknown")]
-    [:div.connection-card {:class (when is-stale "stale")}
-     [:div.connection-header
-      [:span.connection-dot {:class (if is-stale "stale" "active")}]
-      [:strong instance]
-      [:span.health-badge {:class (health-class health)}
-       (health-label health)]]
-     [:div.connection-details
-      [:div (str host ":" port)]
-      [:div.last-query
-       {:class (when is-stale "stale")}
-       (if last-query-at
-         (str "Last query: " (relative-time last-query-at))
-         "No queries yet")]
-      (when (:last-heartbeat-at health-info)
-        [:div (str "Last heartbeat: " (relative-time (:last-heartbeat-at health-info)))])
-      (when (pos? (or (:failures health-info) 0))
-        [:div.connection-failures (str "Failures: " (:failures health-info))])]]))
+(defn- status-dot-class [status]
+  (case status
+    (:ok :alive :connected :running :available) "ok"
+    (:error :unreachable :disconnected)          "error"
+    (:warning :timeout :stale)                   "warning"
+    "unknown"))
+
+(defn- dashboard-card
+  "Generic dashboard card with status dot, title, and child content."
+  [status title & children]
+  [:div.dashboard-card
+   [:div.dashboard-card-header
+    [:span.dashboard-dot {:class (status-dot-class status)}]
+    [:span.dashboard-card-title title]]
+   (into [:div.dashboard-card-body] children)])
+
+(defn- http-server-card []
+  (let [server @state/server-status]
+    [dashboard-card
+     (if server :ok :disconnected)
+     "HTTP Server"
+     (if server
+       [:<>
+        [:div.dashboard-detail
+         [:span.detail-label "Status"]
+         [:span.detail-value "Running"]]
+        (when (:port server)
+          [:div.dashboard-detail
+           [:span.detail-label "Port"]
+           [:span.detail-value (str (:port server))]])
+        (when (:started-at server)
+          [:div.dashboard-detail
+           [:span.detail-label "Uptime"]
+           [:span.detail-value (uptime-str (:started-at server))]])
+        [:div.dashboard-detail
+         [:span.detail-label "Version"]
+         [:span.detail-value (or (:version server) "?")]]]
+       [:div.dashboard-empty "Not connected"])]))
+
+(defn- websocket-card []
+  (let [ws-status @state/connection-status
+        server    @state/server-status
+        clients   (or (:ws-client-count server) 0)]
+    [dashboard-card
+     ws-status
+     "WebSocket"
+     [:div.dashboard-detail
+      [:span.detail-label "Status"]
+      [:span.detail-value {:class (name ws-status)}
+       (case ws-status
+         :connected    "Connected"
+         :disconnected "Disconnected"
+         :error        "Error"
+         "Unknown")]]
+     [:div.dashboard-detail
+      [:span.detail-label "Clients"]
+      [:span.detail-value (str clients)]]]))
+
+(defn- health-class [health]
+  (case health
+    "alive"       "ok"
+    "unreachable" "error"
+    "timeout"     "warning"
+    "unknown"))
+
+(defn- rcon-card [{:keys [instance host port last-query-at]} health-info]
+  (let [health (or (:health health-info) "unknown")]
+    [dashboard-card
+     (keyword (health-class health))
+     (str "RCON: " instance)
+     [:div.dashboard-detail
+      [:span.detail-label "Host"]
+      [:span.detail-value (str host ":" port)]]
+     [:div.dashboard-detail
+      [:span.detail-label "Health"]
+      [:span.detail-value {:class (health-class health)}
+       (case health
+         "alive"       "Alive"
+         "unreachable" "Unreachable"
+         "timeout"     "Timeout"
+         "Unknown")]]
+     [:div.dashboard-detail
+      [:span.detail-label "Last Query"]
+      [:span.detail-value
+       (if last-query-at (relative-time last-query-at) "Never")]]
+     (when (:last-heartbeat-at health-info)
+       [:div.dashboard-detail
+        [:span.detail-label "Heartbeat"]
+        [:span.detail-value (relative-time (:last-heartbeat-at health-info))]])
+     (when (pos? (or (:failures health-info) 0))
+       [:div.dashboard-detail
+        [:span.detail-label "Failures"]
+        [:span.detail-value.error (str (:failures health-info))]])]))
+
+(defn- capabilities-card []
+  (let [caps @state/capabilities]
+    [dashboard-card
+     (if (and caps (some (fn [[_ v]] (:available v)) caps)) :ok :warning)
+     "Capabilities"
+     (if (seq caps)
+       (for [[k v] caps]
+         ^{:key k}
+         [:div.dashboard-detail
+          [:span.detail-label k]
+          [:span.detail-value {:class (if (:available v) "ok" "error")}
+           (if (:available v) "Available" "Missing")]])
+       [:div.dashboard-empty "Detecting..."])]))
+
+(defn- pipeline-card []
+  (let [current @state/pipeline-status
+        results @state/pipeline-results
+        targets ["check" "lint" "test" "pack"]]
+    [dashboard-card
+     (cond
+       (and current (= :running (:status current))) :warning
+       (some #(= :error (:status (get results %))) targets) :error
+       (some #(get results %) targets) :ok
+       :else :unknown)
+     "Pipeline"
+     (for [target targets]
+       (let [result (get results target)]
+         ^{:key target}
+         [:div.dashboard-detail
+          [:span.detail-label target]
+          [:span.detail-value
+           {:class (cond
+                     (and current (= target (:target current)) (= :running (:status current))) "warning"
+                     (= :ok (:status result)) "ok"
+                     (= :error (:status result)) "error"
+                     :else "")}
+           (cond
+             (and current (= target (:target current)) (= :running (:status current))) "Running..."
+             (= :ok (:status result)) "Passed"
+             (= :error (:status result)) "Failed"
+             :else "Not run")]]))]))
 
 (defn connection-panel []
   (let [tick (r/atom 0)
@@ -331,24 +436,28 @@ end)")
      {:component-did-mount
       (fn [_]
         (reset! interval-id
-                (js/setInterval #(swap! tick inc) 1000)))
+                (js/setInterval #(swap! tick inc) 5000)))
       :component-will-unmount
       (fn [_]
         (when @interval-id
           (js/clearInterval @interval-id)))
       :reagent-render
       (fn []
-        (let [_ @tick
+        (let [_          @tick
               conns      @state/rcon-connections
               health-map @state/rcon-health]
-          [:div.connection-panel
-           [:div.panel-header "RCON Connections"]
-           (if (empty? conns)
-             [:div.empty-state "No RCON connections"]
-             [:div.connection-grid
-              (for [conn conns]
-                ^{:key (:instance conn)}
-                [connection-card conn (get health-map (:instance conn))])])]))})))
+          [:div.connection-dashboard
+           [:div.panel-header "Connection Status"]
+           [:div.dashboard-grid
+            [http-server-card]
+            [websocket-card]
+            (for [conn conns]
+              ^{:key (:instance conn)}
+              [rcon-card conn (get health-map (:instance conn))])
+            [capabilities-card]
+            [pipeline-card]]
+           (when (empty? conns)
+             [:div.dashboard-hint "No RCON connections configured"])]))})))
 
 ;; ---------------------------------------------------------------------------
 ;; Section routing
@@ -360,7 +469,7 @@ end)")
                  [file-tree-panel]
                  [center-panel]
                  [diagnostics-panel]]
-    :connection [connection-panel]
+    :connection  [connection-panel]
     :prototypes [placeholder-panel "Prototypes" "Browse and inspect all prototypes"]
     :blueprints [placeholder-panel "Blueprints" "Blueprint lab viewer"]
     :tech-tree  [placeholder-panel "Tech Tree" "Technology tree viewer"]
