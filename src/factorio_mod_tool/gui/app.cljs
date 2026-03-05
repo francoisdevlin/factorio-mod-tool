@@ -16,7 +16,10 @@
 (defn- fetch-initial-data []
   ;; Fetch server status
   (-> (ws/send-command! "GET" "/api/status")
-      (.then (fn [res] (reset! state/server-status res)))
+      (.then (fn [res]
+               (reset! state/server-status res)
+               (when-let [conns (:rcon-connections res)]
+                 (reset! state/rcon-connections (vec conns)))))
       (.catch (fn [_])))
   ;; Fetch capabilities
   (-> (ws/send-command! "GET" "/api/capabilities")

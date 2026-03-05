@@ -37,3 +37,6 @@
 
 ;; RCON connection health: map of instance-name -> {:health, :last-heartbeat-at, :failures}
 (defonce rcon-health (r/atom {}))
+
+;; RCON connections: vector of {:instance, :host, :port} from /api/status
+(defonce rcon-connections (r/atom []))

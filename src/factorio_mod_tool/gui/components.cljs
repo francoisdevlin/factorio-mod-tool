@@ -205,44 +205,158 @@
 ;; Connection dashboard
 ;; ---------------------------------------------------------------------------
 
-(defn- health-class [health]
-  (case health
-    "alive"       "health-alive"
-    "unreachable" "health-unreachable"
-    "timeout"     "health-timeout"
-    "health-unknown"))
+(defn- status-dot-cls [status]
+  (case status
+    (:ok :connected :running :available :alive) "dot-ok"
+    (:disconnected :unreachable)                "dot-error"
+    :error                                      "dot-error"
+    :warning                                    "dot-warning"
+    (:missing :timeout)                         "dot-warn"
+    "dot-unknown"))
 
-(defn- health-label [health]
-  (case health
-    "alive"       "Alive"
-    "unreachable" "Unreachable"
-    "timeout"     "Timeout"
-    "Unknown"))
+(defn- conn-card [title status-kw detail & children]
+  [:div.conn-card
+   [:div.conn-card-header
+    [:span.conn-dot {:class (status-dot-cls status-kw)}]
+    [:span.conn-card-title title]
+    [:span.conn-card-status (name status-kw)]]
+   [:div.conn-card-body
+    (when detail [:div.conn-card-detail detail])
+    (into [:<>] children)]])
+
+(defn- http-card []
+  (let [status @state/server-status
+        ws-ok? (= @state/connection-status :connected)]
+    [conn-card
+     "HTTP Server"
+     (if ws-ok? :running :disconnected)
+     (if ws-ok?
+       (str "Port " (or (:port status) "—")
+            (when-let [v (:version status)] (str " · v" v)))
+       "Not reachable")]))
+
+(defn- ws-card []
+  (let [status @state/connection-status]
+    [conn-card
+     "WebSocket"
+     status
+     (case status
+       :connected    "Live connection active"
+       :disconnected "No connection"
+       :error        "Connection error"
+       "Unknown")
+     [:div.conn-card-actions
+      (if (= status :connected)
+        [:button.conn-btn.conn-btn-danger
+         {:on-click #(ws/disconnect!)} "Disconnect"]
+        [:button.conn-btn
+         {:on-click #(ws/connect!
+                      (let [loc (.-location js/window)
+                            protocol (if (= "https:" (.-protocol loc)) "wss:" "ws:")
+                            host (.-host loc)]
+                        (str protocol "//" host "/ws")))}
+         "Connect"])]]))
+
+(defn- rcon-card []
+  (let [conns      @state/rcon-connections
+        health-map @state/rcon-health]
+    [conn-card
+     "Factorio RCON"
+     (cond
+       (empty? conns)                                          :disconnected
+       (every? #(= "alive" (:health (val %))) health-map)     :connected
+       (some #(not= "alive" (:health (val %))) health-map)    :warning
+       :else                                                   :connected)
+     (if (seq conns)
+       (str (count conns) " instance" (when (> (count conns) 1) "s"))
+       "No instances connected")
+     (when (seq conns)
+       [:div.conn-card-list
+        (for [{:keys [instance host port]} conns]
+          (let [health (get-in health-map [instance :health] "unknown")
+                info   (get health-map instance)]
+            ^{:key instance}
+            [:div.conn-card-list-item
+             [:span.conn-dot.conn-dot-sm
+              {:class (status-dot-cls (keyword health))}]
+             [:span.conn-instance instance]
+             [:span.conn-endpoint (str host ":" port)]
+             (when-let [ts (:last-heartbeat-at info)]
+               [:span.conn-meta ts])]))])]))
+
+(defn- capabilities-card []
+  (let [caps @state/capabilities]
+    [conn-card
+     "Capabilities"
+     (cond
+       (nil? caps)                                :unknown
+       (every? #(:available (val %)) caps)        :ok
+       (some #(not (:available (val %))) caps)    :warning
+       :else                                      :ok)
+     (if (nil? caps)
+       "Detecting..."
+       (let [avail (count (filter #(:available (val %)) caps))
+             total (count caps)]
+         (str avail "/" total " available")))
+     (when caps
+       [:div.conn-card-list
+        (for [[k v] (sort-by key caps)]
+          ^{:key k}
+          [:div.conn-card-list-item
+           [:span.conn-dot.conn-dot-sm
+            {:class (if (:available v) "dot-ok" "dot-error")}]
+           [:span (if (keyword? k) (name k) (str k))]
+           (when-let [d (:detail v)]
+             [:span.conn-cap-detail (str d)])])])]))
+
+(defn- pipeline-card []
+  (let [ps @state/pipeline-status]
+    [conn-card
+     "Pipeline"
+     (cond
+       (nil? ps)                  :unknown
+       (= :running (:status ps)) :running
+       (= :ok (:status ps))      :ok
+       (= :error (:status ps))   :error
+       :else                      :unknown)
+     (if ps
+       (str (:target ps) " — " (name (:status ps)))
+       "No runs yet")]))
+
+(defn- fetch-dashboard-data! []
+  (-> (ws/send-command! "GET" "/api/status")
+      (.then (fn [res]
+               (reset! state/server-status res)
+               (when-let [conns (:rcon-connections res)]
+                 (reset! state/rcon-connections (vec conns)))))
+      (.catch (fn [_])))
+  (-> (ws/send-command! "GET" "/api/capabilities")
+      (.then (fn [res]
+               (when-let [caps (:capabilities res)]
+                 (reset! state/capabilities caps))))
+      (.catch (fn [_])))
+  (-> (ws/send-command! "GET" "/api/rcon/health")
+      (.then (fn [res]
+               (when-let [conns (:connections res)]
+                 (reset! state/rcon-health conns))))
+      (.catch (fn [_]))))
 
 (defn connection-panel []
-  (let [health-map @state/rcon-health]
-    [:div.connection-panel
-     [:div.panel-header "RCON Connections"]
-     (if (empty? health-map)
-       [:div.empty-state "No RCON connections active"]
-       [:div.connection-list
-        (for [[instance-name info] health-map]
-          (let [health (or (:health info) "unknown")]
-            ^{:key instance-name}
-            [:div.connection-card
-             [:div.connection-header
-              [:span.connection-name instance-name]
-              [:span.health-badge {:class (health-class health)}
-               (health-label health)]]
-             [:div.connection-details
-              (when (:host info)
-                [:span.connection-host (str (:host info) ":" (:port info))])
-              (when (:last-heartbeat-at info)
-                [:span.connection-heartbeat
-                 (str "Last heartbeat: " (:last-heartbeat-at info))])
-              (when (pos? (or (:failures info) 0))
-                [:span.connection-failures
-                 (str "Failures: " (:failures info))])]]))])]))
+  (r/create-class
+   {:component-did-mount
+    (fn [_] (fetch-dashboard-data!))
+    :reagent-render
+    (fn []
+      [:div.conn-dashboard
+       [:div.conn-grid
+        [http-card]
+        [ws-card]
+        [rcon-card]
+        [capabilities-card]
+        [pipeline-card]]
+       [:div.conn-toolbar
+        [:button.conn-btn {:on-click fetch-dashboard-data!}
+         "Refresh"]]])}))
 
 ;; ---------------------------------------------------------------------------
 ;; Section routing
