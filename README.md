@@ -248,7 +248,32 @@ The `--project` flag is optional. If provided, the server opens the mod project 
 
 The server communicates over **stdio JSON-RPC** — Claude Code manages the process lifecycle automatically.
 
-> **HTTP+SSE transport** is planned but not yet available. Currently only stdio is supported.
+### HTTP+SSE Transport
+
+For remote or custom MCP clients, the server also exposes an HTTP+SSE transport on the same HTTP port (default `3000`, configurable via `--port` or `.fmod.json`).
+
+**How it works:**
+
+1. **Open an SSE stream** — `GET /mcp/sse` returns an `event: endpoint` with the POST URL:
+
+   ```bash
+   curl -N http://localhost:3000/mcp/sse
+   # => event: endpoint
+   # => data: /mcp?sessionId=abc123
+   ```
+
+2. **Send JSON-RPC requests** — POST to the endpoint URL from step 1:
+
+   ```bash
+   curl -X POST "http://localhost:3000/mcp?sessionId=abc123" \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+   # => 202 Accepted (response arrives on the SSE stream)
+   ```
+
+3. **Receive responses** — JSON-RPC responses are pushed as `event: message` on the SSE stream.
+
+> **Note:** stdio remains the default transport for Claude Code. HTTP+SSE is intended for remote clients, browser-based tools, or custom integrations.
 
 ### Available MCP Tools
 
