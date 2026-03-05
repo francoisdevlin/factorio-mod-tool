@@ -52,7 +52,8 @@
            (-> db
                (assoc-in [:navigation :file-content] content)
                (assoc-in [:navigation :file-loading?] false)
-               (assoc-in [:navigation :file-meta] meta)))))
+               (assoc-in [:navigation :file-meta] meta)
+               (assoc-in [:navigation :file-type] (:type meta))))))
 
 (defmethod handle-event :set-file-data [[_ data]]
   (swap! db/app-db

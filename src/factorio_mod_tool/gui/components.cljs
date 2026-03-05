@@ -202,22 +202,17 @@
         mime-type (or @state/file-mime-type "image/png")]
     [:div.image-viewer
      [:img {:src (str "data:" mime-type ";base64," content)
-            :alt @state/selected-file
-            :style {:max-width "100%" :max-height "100%"}}]]))
+            :alt @state/selected-file}]]))
 
 (defn- binary-placeholder
   "Placeholder for non-viewable binary files."
   []
-  [:div.binary-placeholder
-   [:div.binary-icon "\uD83D\uDCC4"]
-   [:div.binary-message "Binary file"]
-   [:div.binary-detail (str (when-let [meta @state/file-meta]
-                              (let [size (:size meta)]
-                                (cond
-                                  (nil? size)       ""
-                                  (< size 1024)     (str size " bytes")
-                                  (< size 1048576)  (str (.toFixed (/ size 1024) 1) " KB")
-                                  :else             (str (.toFixed (/ size 1048576) 1) " MB")))))]])
+  (let [meta @state/file-meta]
+    [:div.binary-placeholder
+     [:div.binary-icon "\uD83D\uDCC4"]
+     [:div.binary-label "Binary file"]
+     (when (:size meta)
+       [:div.binary-size (str (.toFixed (/ (:size meta) 1024) 1) " KB")])]))
 
 (defn- lua-file? [path]
   (and path (.endsWith (.toLowerCase (str path)) ".lua")))

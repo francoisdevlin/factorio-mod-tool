@@ -26,7 +26,7 @@
 ;; Whether a file is currently loading
 (def file-loading? (r/cursor db/app-db [:navigation :file-loading?]))
 
-;; Metadata for the currently viewed file {:mtime, :size}
+;; Metadata for the currently viewed file {:mtime, :size, :type, :encoding}
 (def file-meta (r/cursor db/app-db [:navigation :file-meta]))
 
 ;; File type: :text, :image, or :binary
@@ -34,6 +34,7 @@
 
 ;; MIME type for image files (e.g. "image/png")
 (def file-mime-type (r/cursor db/app-db [:navigation :file-mime-type]))
+
 
 ;; Diagnostics: vector of diagnostic maps
 (def diagnostics (r/cursor db/app-db [:server :diagnostics]))

@@ -50,6 +50,12 @@
   [base filepath]
   (.relative path-mod base filepath))
 
+(defn read-file-base64
+  "Read a file as base64 string. Returns a promise."
+  [filepath]
+  (p/let [buf (.readFile fsp filepath)]
+    (.toString buf "base64")))
+
 (defn write-file
   "Write content to a file as UTF-8. Returns a promise."
   [filepath content]

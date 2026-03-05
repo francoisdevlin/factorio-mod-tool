@@ -501,7 +501,7 @@
 
    (command
     "read-file"
-    "Read the contents of a file in the currently opened project. Takes a relative path and returns the file content with metadata. Images return base64 data; binary files return a placeholder."
+    "Read the contents of a file in the currently opened project. Returns base64 data for images, a placeholder for binary files, and UTF-8 text for everything else."
     {:type       "object"
      :properties {:path {:type        "string"
                          :description "Relative file path within the project directory"}}
@@ -512,9 +512,10 @@
                            (when (pos? dot-idx)
                              (.toLowerCase (.substring path dot-idx))))
             image-exts   #{".png" ".jpg" ".jpeg" ".gif" ".bmp" ".svg" ".ico" ".webp"}
-            binary-exts  #{".zip" ".tar" ".gz" ".dat" ".bin" ".exe" ".dll" ".so"
-                           ".woff" ".woff2" ".ttf" ".otf" ".mp3" ".wav" ".ogg"
-                           ".mp4" ".avi" ".mov"}
+            binary-exts  #{".zip" ".tar" ".gz" ".7z" ".rar" ".dat" ".bin" ".exe"
+                           ".dll" ".so" ".dylib" ".wasm" ".pdf"
+                           ".woff" ".woff2" ".ttf" ".otf"
+                           ".mp3" ".wav" ".ogg" ".mp4" ".avi" ".mov"}
             ext->mime    {".png" "image/png" ".jpg" "image/jpeg" ".jpeg" "image/jpeg"
                           ".gif" "image/gif" ".bmp" "image/bmp" ".svg" "image/svg+xml"
                           ".ico" "image/x-icon" ".webp" "image/webp"}
