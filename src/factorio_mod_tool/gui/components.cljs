@@ -219,18 +219,39 @@
                                   (< size 1048576)  (str (.toFixed (/ size 1024) 1) " KB")
                                   :else             (str (.toFixed (/ size 1048576) 1) " MB")))))]])
 
+(defn- lua-file? [path]
+  (and path (.endsWith (.toLowerCase (str path)) ".lua")))
+
+(defn- check-lua-live-indicator []
+  (let [result @state/check-lua-live-result]
+    (when result
+      [:div.check-lua-live-result
+       {:class (name (or (:status result) :unknown))}
+       (case (:status result)
+         :checking [:span.check-status "\u23F3 Checking..."]
+         :ok       [:span.check-status "\u2713 OK"]
+         :error    [:span.check-status "\u2717 " (:result result)]
+         nil)])))
+
 (defn center-panel []
   [:div.center-panel
    (if @state/selected-file
      (let [meta      @state/file-meta
            loading?  @state/file-loading?
-           file-type (or @state/file-type :text)]
+           file-type (or @state/file-type :text)
+           file      @state/selected-file]
        [:<>
         [:div.file-tab-bar
          [:div.file-tab.active
-          @state/selected-file
+          file
           (when (:mtime meta)
-            [:span.file-tab-mtime (relative-time (:mtime meta))])]]
+            [:span.file-tab-mtime (relative-time (:mtime meta))])]
+         (when (lua-file? file)
+           [:button.check-lua-live-btn
+            {:on-click #(dispatch/dispatch! [:cmd/check-lua-live file])
+             :title    "Send to Factorio and check if it loads"}
+            "\u25B6 Check Live"])]
+        [check-lua-live-indicator]
         [:div.file-content
          (cond
            loading?                [:div.file-loading "Loading..."]

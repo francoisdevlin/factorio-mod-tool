@@ -41,7 +41,8 @@
    {:command "open-project"      :method :post :path "/api/project/open"}
    {:command "get-project"       :method :get  :path "/api/project"}
    {:command "list-files"        :method :get  :path "/api/project/files"}
-   {:command "read-file"        :method :post :path "/api/project/read-file"}])
+   {:command "read-file"        :method :post :path "/api/project/read-file"}
+   {:command "check-lua-live"   :method :post :path "/api/check-lua-live"}])
 
 ;; ---------------------------------------------------------------------------
 ;; Response helpers

@@ -62,3 +62,6 @@
 ;; Project state
 (def project-path (r/cursor db/app-db [:project :current-path]))
 (def project-config (r/cursor db/app-db [:project :config]))
+
+;; Check Lua live result: nil or {:file, :status (:ok/:error), :result, :checking?}
+(def check-lua-live-result (r/cursor db/app-db [:check-lua-live]))
