@@ -10,7 +10,8 @@
             [factorio-mod-tool.util.mod :as mod]
             [factorio-mod-tool.analysis.validate :as validate]
             [factorio-mod-tool.analysis.lint :as lint]
-            [factorio-mod-tool.rcon.client :as rcon]))
+            [factorio-mod-tool.rcon.client :as rcon]
+            [factorio-mod-tool.repl :as repl]))
 
 ;; ---------------------------------------------------------------------------
 ;; Tool definitions
@@ -112,6 +113,66 @@
                                              :text (str "RCON error: " (ex-message err))}]
                                   :isError true}))))})
 
+(def repl-eval-tool
+  {:name        "repl-eval"
+   :description "Evaluate Lua code against a running Factorio instance via REPL. Supports dot-commands: .entities, .recipes, .forces, .surface for structured inspection."
+   :inputSchema {:type       "object"
+                 :properties {:instance {:type        "string"
+                                         :description "Name of the RCON connection"}
+                              :code     {:type        "string"
+                                         :description "Lua code to evaluate (or dot-command like .entities)"}}
+                 :required   [:instance :code]}
+   :tool-fn     (fn [_context arguments]
+                  (-> (p/let [result (repl/eval-lua (:instance arguments)
+                                                    (:code arguments))]
+                        {:content [{:type "text"
+                                    :text (pr-str result)}]
+                         :isError false})
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "REPL error: " (ex-message err))}]
+                                  :isError true}))))})
+
+(def repl-history-tool
+  {:name        "repl-history"
+   :description "View REPL command history. Returns previous commands and their results."
+   :inputSchema {:type       "object"
+                 :properties {:limit {:type        "number"
+                                      :description "Number of recent entries to return (default: all)"}}}
+   :tool-fn     (fn [_context arguments]
+                  (let [history (if-let [n (:limit arguments)]
+                                 (repl/get-history n)
+                                 (repl/get-history))]
+                    (p/resolved
+                     {:content [{:type "text"
+                                 :text (pr-str {:count (count history)
+                                                :entries history})}]
+                      :isError false})))})
+
+(def repl-inspect-tool
+  {:name        "repl-inspect"
+   :description "Structured game state inspection. Query entities, recipes, forces, or surface state from a running Factorio instance."
+   :inputSchema {:type       "object"
+                 :properties {:instance {:type        "string"
+                                         :description "Name of the RCON connection"}
+                              :category {:type        "string"
+                                         :description "What to inspect: entities, recipes, forces, or surface"
+                                         :enum        ["entities" "recipes" "forces" "surface"]}
+                              :filter   {:type        "string"
+                                         :description "Optional substring filter for results"}}
+                 :required   [:instance :category]}
+   :tool-fn     (fn [_context arguments]
+                  (-> (p/let [result (repl/inspect (:instance arguments)
+                                                   (:category arguments)
+                                                   (:filter arguments))]
+                        {:content [{:type "text"
+                                    :text (pr-str result)}]
+                         :isError false})
+                      (p/catch (fn [err]
+                                 {:content [{:type "text"
+                                             :text (str "Inspect error: " (ex-message err))}]
+                                  :isError true}))))})
+
 ;; ---------------------------------------------------------------------------
 ;; Session & context
 ;; ---------------------------------------------------------------------------
@@ -125,7 +186,10 @@
                      parse-lua-tool
                      lint-mod-tool
                      rcon-exec-tool
-                     rcon-inspect-tool]})))
+                     rcon-inspect-tool
+                     repl-eval-tool
+                     repl-history-tool
+                     repl-inspect-tool]})))
 
 (def context
   {:session      session
