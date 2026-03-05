@@ -4,6 +4,7 @@
   (:require [clojure.string :as str]
             [promesa.core :as p]
             [factorio-mod-tool.http.routes :as routes]
+            [factorio-mod-tool.queue :as queue]
             [factorio-mod-tool.util.config :as config]
             [factorio-mod-tool.http.static :as static]))
 
@@ -141,6 +142,7 @@
   "Start the HTTP+WS server on the given port. Returns a promise that resolves
    when the server is listening."
   [port]
+  (queue/set-broadcast! broadcast!)
   (-> (p/let [^js server (.createServer http handle-request)
               wss (WebSocketServer. #js {:server server})]
         (setup-websocket wss)
