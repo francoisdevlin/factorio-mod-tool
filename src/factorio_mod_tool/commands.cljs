@@ -491,7 +491,7 @@
                                     (fs/read-file abs-path))]
                     (cond-> {:path      path
                              :file-type (name file-type)
-                             :mtime     (.toISOString (.-mtime st))
+                             :mtime     (.toISOString ^js (.-mtime st))
                              :size      (.-size st)}
                       (= file-type :text)  (assoc :content content)
                       (= file-type :image) (assoc :content content
