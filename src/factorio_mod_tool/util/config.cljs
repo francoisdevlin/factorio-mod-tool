@@ -43,7 +43,7 @@
     (conj "Missing required field: version (must be a string)")))
 
 (def ^:private default-log
-  {:heartbeats false})
+  {:heartbeat false})
 
 (defn- apply-defaults
   "Apply default values for optional fields."

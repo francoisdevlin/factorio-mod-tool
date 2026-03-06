@@ -82,7 +82,7 @@
   "Check if heartbeat logging is enabled via project config.
    Reads from app-state (updated by open-project! or config reload)."
   []
-  (boolean (get-in @state/app-state [:project :config :log :heartbeats])))
+  (boolean (get-in @state/app-state [:project :config :log :heartbeat])))
 
 (defn- log-hb
   "Write a heartbeat log line to stderr when logging is enabled."

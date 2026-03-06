@@ -246,7 +246,7 @@
                                   raw (-> content js/JSON.parse (js->clj :keywordize-keys true))]
                             (swap! app-state assoc-in [:project :config]
                                    (-> raw
-                                       (update :log #(merge {:heartbeats false} %)))))
+                                       (update :log #(merge {:heartbeat false} %)))))
                           (p/catch (fn [err]
                                      (js/process.stderr.write
                                       (str "Warning: failed to reload " config-path ": "
